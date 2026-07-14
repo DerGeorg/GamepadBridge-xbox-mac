@@ -1,0 +1,44 @@
+//
+// XboxOneGamepadDriver.iig — DriverKit interface definition (SCAFFOLD)
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// A virtual HID game pad implemented with HIDDriverKit. The userspace
+// driver (src/output_driverkit.cpp) opens a user client on this service
+// and pushes input reports; this class forwards them to the HID stack via
+// handleReport(), so the system sees a real gamepad.
+//
+// This is a scaffold: it shows the required method surface and is written
+// as valid-looking DriverKit, but has not been built. See ../README.md for
+// the Xcode project setup, entitlements, and activation steps.
+//
+
+#ifndef XboxOneGamepadDriver_h
+#define XboxOneGamepadDriver_h
+
+#include <Availability.h>
+#include <DriverKit/IOService.iig>
+#include <HIDDriverKit/IOUserHIDDevice.iig>
+
+class XboxOneGamepadDriver: public IOUserHIDDevice
+{
+public:
+    virtual bool      init(void) override;
+    virtual void      free(void) override;
+
+    virtual kern_return_t Start(IOService * provider) override;
+    virtual kern_return_t Stop(IOService * provider) override;
+
+    // IOUserHIDDevice overrides: describe the device and its report format.
+    virtual OSDictionary * newDeviceDescription(void) override;
+    virtual OSData       * newReportDescriptor(void) override;
+
+    // Vends the user client that the userspace driver talks to.
+    virtual kern_return_t NewUserClient(uint32_t type,
+                                        IOUserClient ** userClient) override;
+
+    // Called by the user client to inject one HID input report.
+    virtual kern_return_t postInputReport(const void * report,
+                                          uint64_t length);
+};
+
+#endif /* XboxOneGamepadDriver_h */
