@@ -22,6 +22,14 @@ endif()
 set(XOW_BACKEND "console" CACHE STRING
     "Output backend: console, iohid, corehid or driverkit")
 
+# Menu bar UI. Needs Swift and AppKit, so it rides along with the corehid
+# backend; any other backend silently does without it.
+option(XOW_MENUBAR "Build the menu bar UI (corehid backend only)" ON)
+
+# Marketing version for the bundle. XOW_VERSION is a git describe and is not
+# a valid CFBundleShortVersionString.
+set(XOW_RELEASE_VERSION "1.0.0" CACHE STRING "Release version for the bundle")
+
 # Default firmware location. Override at runtime with the XOW_FIRMWARE env var.
 set(XOW_FIRMWARE_PATH "/usr/local/share/gamepadbridge/xow_dongle.bin"
     CACHE STRING "Default path to the extracted dongle firmware blob")
@@ -60,6 +68,7 @@ set(CORE_SOURCES
     src/controller/gip.cpp
     src/controller/controller.cpp
     src/utils/log.cpp
+    src/status.cpp
 )
 
 set(BACKEND_FRAMEWORKS "")
@@ -87,6 +96,13 @@ elseif(XOW_BACKEND STREQUAL "corehid")
     list(APPEND BACKEND_FRAMEWORKS
         ${COREHID_FRAMEWORK}
         ${FOUNDATION_FRAMEWORK})
+
+    if(XOW_MENUBAR)
+        list(APPEND CORE_SOURCES src/menubar.swift)
+        find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
+        list(APPEND BACKEND_FRAMEWORKS ${APPKIT_FRAMEWORK})
+        set(XOW_MENUBAR_ACTIVE ON)
+    endif()
     message(STATUS "CoreHID backend selected — virtual gamepad via "
                    "HIDVirtualDevice (needs the hid.virtual.device "
                    "entitlement; use -G Xcode so the app gets signed).")
@@ -138,6 +154,15 @@ if(XOW_BACKEND STREQUAL "corehid")
         XCODE_ATTRIBUTE_SWIFT_VERSION "5.0")
 endif()
 
+if(XOW_MENUBAR_ACTIVE)
+    target_compile_definitions(gamepadbridge PRIVATE GAMEPADBRIDGE_MENUBAR)
+
+    # menubar.swift calls into the C half of the status board.
+    set_target_properties(gamepadbridge PROPERTIES
+        XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER
+            "${CMAKE_SOURCE_DIR}/src/gamepadbridge-bridging.h")
+endif()
+
 # ---------------------------------------------------------------------------
 # Optional: signed .app bundle for the IOHID/DriverKit backends.
 #
@@ -155,10 +180,22 @@ set(XOW_TEAM_ID "" CACHE STRING "Apple Developer Team ID for signing")
 set(XOW_BUNDLE_ID "at.dergeorg.gamepadbridge" CACHE STRING "App bundle identifier")
 
 if(XOW_MACOS_APP)
+    set(GPB_ICON ${CMAKE_SOURCE_DIR}/packaging/GamepadBridge.icns)
+    target_sources(gamepadbridge PRIVATE ${GPB_ICON})
+    set_source_files_properties(${GPB_ICON} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
+
     set_target_properties(gamepadbridge PROPERTIES
         MACOSX_BUNDLE ON
         MACOSX_BUNDLE_GUI_IDENTIFIER ${XOW_BUNDLE_ID}
         MACOSX_BUNDLE_BUNDLE_NAME "GamepadBridge"
+        MACOSX_BUNDLE_ICON_FILE "GamepadBridge.icns"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${XOW_RELEASE_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${XOW_RELEASE_VERSION}"
+        MACOSX_BUNDLE_COPYRIGHT
+            "GPL-2.0-or-later. Based on xow by Medusalix."
+        MACOSX_BUNDLE_INFO_PLIST
+            "${CMAKE_SOURCE_DIR}/packaging/Info.plist.in"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER ${XOW_BUNDLE_ID}
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${XOW_TEAM_ID}"

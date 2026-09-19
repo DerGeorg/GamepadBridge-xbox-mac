@@ -32,6 +32,7 @@
 
 #include "utils/log.h"
 #include "output.h"
+#include "status.h"
 #include "dongle/usb.h"
 #include "dongle/dongle.h"
 
@@ -155,6 +156,118 @@ namespace
     }
 }
 
+#ifdef GAMEPADBRIDGE_MENUBAR
+extern "C" void gpb_menubar_run(void);
+extern "C" void gpb_menubar_stop(void);
+#endif
+
+namespace
+{
+    // The dongle half of the program: everything from finding the adapter to
+    // the signal loop that shuts it down again. Factored out of main() so the
+    // menu bar build can run it on a worker thread and leave the main thread
+    // to AppKit, which insists on having it.
+    int runDriver(const sigset_t &mask)
+    {
+        UsbDeviceManager manager;
+
+        // A failing USB transfer asks us to terminate: deliver a process-wide
+        // SIGTERM that the sigwait() loop below will pick up.
+        UsbDevice::Terminate terminate = []() {
+            kill(getpid(), SIGTERM);
+        };
+
+        // While waiting for the dongle to be plugged in, allow Ctrl-C to quit
+        // (default disposition terminates the process).
+        if (pthread_sigmask(SIG_UNBLOCK, &mask, nullptr) != 0)
+        {
+            Log::error("Error unblocking signals: %s", strerror(errno));
+
+            return EXIT_FAILURE;
+        }
+
+        /*
+         * Opening the dongle can legitimately fail on a first try: a reset makes
+         * macOS re-enumerate it, so the device we just found is briefly gone.
+         * Retry instead of letting the exception escape main() — an uncaught
+         * throw aborts the process and buries a transient hiccup under a crash
+         * report.
+         */
+        std::unique_ptr<UsbDevice> device;
+
+        for (int attempt = 1; !device; attempt++)
+        {
+            try
+            {
+                device = manager.getDevice({
+                    { DONGLE_VID, DONGLE_PID_OLD },
+                    { DONGLE_VID, DONGLE_PID_NEW },
+                    { DONGLE_VID, DONGLE_PID_SURFACE }
+                }, terminate);
+            }
+
+            catch (const UsbException &error)
+            {
+                if (attempt >= 5)
+                {
+                    Log::error("Could not open the dongle: %s", error.what());
+                    Log::error("Unplug the adapter, plug it back in, and make "
+                               "sure no second instance is running.");
+
+                    return EXIT_FAILURE;
+                }
+
+                Log::info("%s - retrying (%d/5)", error.what(), attempt);
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+        }
+
+        // Re-block before starting the dongle's worker threads.
+        if (pthread_sigmask(SIG_BLOCK, &mask, nullptr) != 0)
+        {
+            Log::error("Error blocking signals: %s", strerror(errno));
+
+            return EXIT_FAILURE;
+        }
+
+        Dongle dongle(std::move(device));
+
+        Status::setConnection("No controller", false);
+
+        Log::info("Ready. Press the dongle button (or send SIGUSR1) to pair.");
+
+        while (true)
+        {
+            int signal = 0;
+
+            if (sigwait(&mask, &signal) != 0)
+            {
+                Log::error("Error waiting for signal: %s", strerror(errno));
+
+                break;
+            }
+
+            if (signal == SIGUSR1)
+            {
+                Log::debug("User signal received, enabling pairing");
+
+                // Hand the work to the USB thread; libusb must stay single-threaded.
+                dongle.enablePairing();
+
+                continue;
+            }
+
+            // SIGINT or SIGTERM
+            break;
+        }
+
+        Log::info("Shutting down...");
+
+        return EXIT_SUCCESS;
+    }
+}
+
 int main()
 {
     Log::init();
@@ -190,98 +303,27 @@ int main()
         return runSelfTest(mask);
     }
 
-    UsbDeviceManager manager;
-
-    // A failing USB transfer asks us to terminate: deliver a process-wide
-    // SIGTERM that the sigwait() loop below will pick up.
-    UsbDevice::Terminate terminate = []() {
-        kill(getpid(), SIGTERM);
-    };
-
-    // While waiting for the dongle to be plugged in, allow Ctrl-C to quit
-    // (default disposition terminates the process).
-    if (pthread_sigmask(SIG_UNBLOCK, &mask, nullptr) != 0)
-    {
-        Log::error("Error unblocking signals: %s", strerror(errno));
-
-        return EXIT_FAILURE;
-    }
-
+#ifdef GAMEPADBRIDGE_MENUBAR
     /*
-     * Opening the dongle can legitimately fail on a first try: a reset makes
-     * macOS re-enumerate it, so the device we just found is briefly gone.
-     * Retry instead of letting the exception escape main() — an uncaught
-     * throw aborts the process and buries a transient hiccup under a crash
-     * report.
+     * AppKit owns the main thread, so the driver moves to a worker. Quitting
+     * from the menu raises SIGTERM, the driver's own signal loop unwinds and
+     * destroys the dongle, and only then is the event loop stopped — so the
+     * controller is still powered down properly on the way out.
      */
-    std::unique_ptr<UsbDevice> device;
+    int result = EXIT_SUCCESS;
 
-    for (int attempt = 1; !device; attempt++)
-    {
-        try
-        {
-            device = manager.getDevice({
-                { DONGLE_VID, DONGLE_PID_OLD },
-                { DONGLE_VID, DONGLE_PID_NEW },
-                { DONGLE_VID, DONGLE_PID_SURFACE }
-            }, terminate);
-        }
+    std::thread driver([&result, &mask]() {
+        result = runDriver(mask);
 
-        catch (const UsbException &error)
-        {
-            if (attempt >= 5)
-            {
-                Log::error("Could not open the dongle: %s", error.what());
-                Log::error("Unplug the adapter, plug it back in, and make "
-                           "sure no second instance is running.");
+        gpb_menubar_stop();
+    });
 
-                return EXIT_FAILURE;
-            }
+    gpb_menubar_run();
 
-            Log::info("%s - retrying (%d/5)", error.what(), attempt);
+    driver.join();
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        }
-    }
-
-    // Re-block before starting the dongle's worker threads.
-    if (pthread_sigmask(SIG_BLOCK, &mask, nullptr) != 0)
-    {
-        Log::error("Error blocking signals: %s", strerror(errno));
-
-        return EXIT_FAILURE;
-    }
-
-    Dongle dongle(std::move(device));
-
-    Log::info("Ready. Press the dongle button (or send SIGUSR1) to pair.");
-
-    while (true)
-    {
-        int signal = 0;
-
-        if (sigwait(&mask, &signal) != 0)
-        {
-            Log::error("Error waiting for signal: %s", strerror(errno));
-
-            break;
-        }
-
-        if (signal == SIGUSR1)
-        {
-            Log::debug("User signal received, enabling pairing");
-
-            // Hand the work to the USB thread; libusb must stay single-threaded.
-            dongle.enablePairing();
-
-            continue;
-        }
-
-        // SIGINT or SIGTERM
-        break;
-    }
-
-    Log::info("Shutting down...");
-
-    return EXIT_SUCCESS;
+    return result;
+#else
+    return runDriver(mask);
+#endif
 }

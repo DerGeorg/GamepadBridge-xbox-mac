@@ -18,6 +18,7 @@
  */
 
 #include "controller.h"
+#include "../status.h"
 #include "../utils/log.h"
 
 #include <cstdlib>
@@ -82,6 +83,8 @@ void Controller::statusReceived(uint8_t /*id*/, const StatusData *status)
     }
 
     Log::info("Battery level: %s", levels[level].c_str());
+
+    Status::setBattery(levels[level]);
 
     batteryLevel = level;
 }

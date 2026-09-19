@@ -17,6 +17,7 @@
  */
 
 #include "dongle.h"
+#include "../status.h"
 #include "../utils/log.h"
 
 Dongle::Dongle(
@@ -125,6 +126,8 @@ void Dongle::handleControllerConnect(Bytes address)
     controllers[wcid - 1].reset(new Controller(sendPacket));
 
     Log::info("Controller '%d' connected", wcid);
+
+    Status::setConnection("Controller connected", true);
 }
 
 void Dongle::handleControllerDisconnect(uint8_t wcid)
@@ -153,6 +156,8 @@ void Dongle::handleControllerDisconnect(uint8_t wcid)
     }
 
     Log::info("Controller '%d' disconnected", wcid);
+
+    Status::setConnection("No controller", false);
 }
 
 void Dongle::handleControllerPair(Bytes address, const Bytes &packet)
