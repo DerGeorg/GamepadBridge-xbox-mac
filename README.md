@@ -19,7 +19,7 @@ be rewritten.
 | Stage | What | Status |
 |-------|------|--------|
 | **Stage 1** | Talk to the dongle, pair a controller, show input **in the terminal** | ✅ **done & tested on real hardware** (macOS 26.5.1 arm64, adapter `045e:02fe`, controller 1537) |
-| **Stage 2** | Expose the input as a **real gamepad** games & emulators can use | 🟡 **backend written & compiles** — gated on an Apple entitlement (see below) |
+| **Stage 2** | Expose the input as a **real gamepad** games & emulators can use | ✅ **working** (macOS 27, CoreHID) — needs a paid Apple entitlement, see below |
 
 Stage 1 proves the dongle works on the Mac. Stage 2 turns it into a controller
 that games and emulators see.
@@ -77,25 +77,62 @@ appears as soon as the controller connects.
 ## Stage 2 — real gamepad
 
 Stage 2 publishes a **virtual HID gamepad** that Stage 1 feeds with reports, so
-games and emulators see a normal Xbox controller. Two backends are available:
+games and emulators see a normal Xbox controller. Verified working on macOS 27:
+the device shows up as `045e:02d1`, Usage Page 1 / Usage 5 (Game Pad),
+Transport `Virtual`, with macOS binding its own `AppleUserHIDEventDriver` to it.
 
-- **`iohid`** (recommended) — creates the virtual device straight from
-  userspace via `IOHIDUserDevice`. No system extension, no host app:
+Backends:
+
+- **`corehid`** (recommended) — uses CoreHID's `HIDVirtualDevice` (macOS 15+),
+  Apple's supported API. A Swift shim (`src/corehid_shim.swift`) exposes it to
+  the C++ core:
   ```sh
-  cmake -DXOW_BACKEND=iohid -S . -B build-iohid
-  cmake --build build-iohid
+  cmake -G Xcode -DXOW_BACKEND=corehid -DXOW_MACOS_APP=ON \
+        -DXOW_TEAM_ID=YOURTEAMID -S . -B build-corehid
+  xcodebuild -project build-corehid/gamepadbridge.xcodeproj \
+             -configuration Release -allowProvisioningUpdates
   ```
-- **`driverkit`** — a full DriverKit system extension (scaffold in
-  [`driverkit/`](driverkit/)). More moving parts; the alternative if you prefer
-  the "blessed" distribution path.
+- **`iohid`** — the older `IOHIDUserDevice` SPI. Works, but undocumented and
+  less reliable on macOS 27. Note: a dispatch queue **must** be set before
+  `IOHIDUserDeviceActivate`, or the process aborts.
+- **`driverkit`** — DriverKit system extension (scaffold in `driverkit/`), the
+  route Karabiner takes. Not needed for the above to work.
 
-**The gate (both backends):** publishing a virtual HID device requires a
-*restricted* Apple entitlement — `com.apple.developer.hid.virtual.device` for
-`iohid`, the DriverKit family entitlements for `driverkit`. Under SIP these are
-only honored when backed by an Apple-issued provisioning profile, so a paid
-Apple Developer account **and** Apple's approval of the entitlement request are
-required. See [`driverkit/README.md`](driverkit/README.md) for the request
-process and a no-entitlement fallback.
+### What it takes to run Stage 2
+
+Publishing a virtual HID device needs **all** of these. Missing any one of them
+makes device creation fail *silently* — both APIs just return nil/NULL with no
+error anywhere in the system log.
+
+1. **A paid Apple Developer membership.**
+2. **The `com.apple.developer.hid.virtual.device` entitlement**, which is
+   restricted: request it at
+   <https://developer.apple.com/contact/request/system-extension/> and pick
+   **"Virtual HID"** in the dropdown. Apple assigns it to your team manually.
+3. **The capability enabled on your App ID** in Certificates, Identifiers &
+   Profiles — being granted it for the team is not enough.
+4. **Your Mac registered as a development device**, so Xcode can issue a
+   development provisioning profile.
+5. **Signing with that profile**, embedded in a `.app` bundle. A self-signed
+   entitlement does not work: AMFI kills the process at launch under SIP.
+6. ⚠️ **TCC permission for whichever app launches it.** This is the one that
+   costs people hours. macOS attributes the request to the *responsible parent
+   process*, so if you start it from a terminal, grant the permissions to
+   **that terminal app** — iTerm if you use iTerm, Terminal if you use
+   Terminal. Under **System Settings → Privacy & Security**, enable it for
+   **Input Monitoring** (and Device Control / Accessibility if prompted).
+   Launching the `.app` bundle directly instead makes macOS attribute the
+   permission to GamepadBridge itself.
+
+Running as root does **not** substitute for any of this.
+
+Two diagnostic switches are built in, useful when creation is refused and you
+need to bisect the cause:
+
+| Env var | Effect |
+|---------|--------|
+| `GAMEPADBRIDGE_MINIMAL_HID=1` | use a textbook-minimal descriptor instead of the full Xbox layout |
+| `GAMEPADBRIDGE_NEUTRAL_IDS=1` | advertise neutral pid.codes IDs instead of Microsoft's |
 
 ## What's tested — and what isn't
 
@@ -107,8 +144,10 @@ process and a no-entitlement fallback.
   triggers and both sticks report correctly and **stream continuously** (no
   freeze). Clean shutdown via Ctrl-C including controller power-off.
 - ✅ Runs **without `sudo`**.
-- 🟡 Both Stage 2 backends compile; running one as a real gamepad is gated on
-  the Apple entitlement (request pending).
+- ✅ Stage 2 **verified on macOS 27**: with the entitlement granted and the
+  TCC permission in place, the virtual gamepad is created and reports stream
+  to it. `hidutil list` shows it as a Virtual transport game pad bound to
+  `AppleUserHIDEventDriver`.
 
 ## License & firmware
 

@@ -16,8 +16,11 @@ endif()
 #   iohid     -> Stage 2: virtual HID gamepad via IOHIDUserDevice (userspace,
 #                no system extension; needs the hid.virtual.device entitlement
 #                or root — see driverkit/README.md)
+#   corehid   -> Stage 2: virtual HID gamepad via CoreHID (macOS 15+, Apple's
+#                supported API; Swift shim + same hid.virtual.device entitlement)
 #   driverkit -> Stage 2: virtual HID gamepad via a DriverKit system extension
-set(XOW_BACKEND "console" CACHE STRING "Output backend: console, iohid or driverkit")
+set(XOW_BACKEND "console" CACHE STRING
+    "Output backend: console, iohid, corehid or driverkit")
 
 # Default firmware location. Override at runtime with the XOW_FIRMWARE env var.
 set(XOW_FIRMWARE_PATH "/usr/local/share/gamepadbridge/xow_dongle.bin"
@@ -73,6 +76,20 @@ elseif(XOW_BACKEND STREQUAL "iohid")
     message(STATUS "IOHID backend selected — virtual gamepad via "
                    "IOHIDUserDevice (run as root or with the "
                    "hid.virtual.device entitlement).")
+elseif(XOW_BACKEND STREQUAL "corehid")
+    # CoreHID is Swift-only, so this backend is a C++ file plus a Swift shim.
+    # Swift is enabled here rather than in project() so the other backends keep
+    # working with generators that have no Swift support.
+    enable_language(Swift)
+    list(APPEND CORE_SOURCES src/output_corehid.cpp src/corehid_shim.swift)
+    find_library(COREHID_FRAMEWORK CoreHID REQUIRED)
+    find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+    list(APPEND BACKEND_FRAMEWORKS
+        ${COREHID_FRAMEWORK}
+        ${FOUNDATION_FRAMEWORK})
+    message(STATUS "CoreHID backend selected — virtual gamepad via "
+                   "HIDVirtualDevice (needs the hid.virtual.device "
+                   "entitlement; use -G Xcode so the app gets signed).")
 elseif(XOW_BACKEND STREQUAL "driverkit")
     list(APPEND CORE_SOURCES src/output_driverkit.cpp)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
@@ -84,7 +101,8 @@ elseif(XOW_BACKEND STREQUAL "driverkit")
                    "extension from driverkit/ to be built and activated.")
 else()
     message(FATAL_ERROR "Unknown XOW_BACKEND '${XOW_BACKEND}' "
-                        "(expected 'console', 'iohid' or 'driverkit')")
+                        "(expected 'console', 'iohid', 'corehid' or "
+                        "'driverkit')")
 endif()
 
 add_executable(gamepadbridge ${CORE_SOURCES})
@@ -102,12 +120,23 @@ target_link_libraries(gamepadbridge PRIVATE
     ${BACKEND_FRAMEWORKS}
 )
 
+# NOTE: these must stay namespaced. A bare VERSION/FIRMWARE macro leaks into
+# every header the compiler sees — including SDK headers that use those words as
+# struct members (IOKit's SCSICmds_INQUIRY_Definitions.h has "UInt8 VERSION;"),
+# which breaks Swift's IOKit module build for the corehid backend.
 target_compile_definitions(gamepadbridge PRIVATE
-    VERSION="${XOW_VERSION}"
-    FIRMWARE="${XOW_FIRMWARE_PATH}"
+    GAMEPADBRIDGE_VERSION="${XOW_VERSION}"
+    GAMEPADBRIDGE_FIRMWARE="${XOW_FIRMWARE_PATH}"
 )
 
-target_compile_options(gamepadbridge PRIVATE -Wall -Wextra)
+target_compile_options(gamepadbridge PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wextra>)
+
+if(XOW_BACKEND STREQUAL "corehid")
+    set_target_properties(gamepadbridge PROPERTIES
+        XCODE_ATTRIBUTE_SWIFT_VERSION "5.0")
+endif()
 
 # ---------------------------------------------------------------------------
 # Optional: signed .app bundle for the IOHID/DriverKit backends.

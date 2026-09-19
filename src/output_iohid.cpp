@@ -12,11 +12,13 @@
  * a real Xbox-style gamepad.
  *
  * Gate: IOHIDUserDeviceCreateWithProperties requires the entitlement
- * "com.apple.developer.hid.virtual.device". With SIP enabled a self-signed
- * entitlement is rejected (AMFI kills the process). Working setups are:
- *   - run as root (sudo), OR
- *   - reduced SIP + ad-hoc sign with the entitlement (driverkit/entitlements),
- *   - or a paid Apple account whose provisioning profile carries it.
+ * "com.apple.developer.hid.virtual.device", which is restricted — Apple has to
+ * assign it to your team and you enable it on the App ID. Verified on macOS:
+ * running as root does NOT bypass it, and a self-signed entitlement is rejected
+ * under SIP (AMFI kills the process on launch). Working setups are:
+ *   - signed with a provisioning profile carrying the entitlement (paid
+ *     Apple Developer account), OR
+ *   - reduced SIP + ad-hoc sign with the entitlement.
  * If the device can't be created we log why and keep running as a no-op so the
  * rest of the driver (USB, pairing) is unaffected.
  *
@@ -31,6 +33,7 @@
 #include <IOKit/hid/IOHIDKeys.h>
 #include <IOKit/hidsystem/IOHIDUserDevice.h>
 #include <mach/mach_time.h>
+#include <dispatch/dispatch.h>
 
 #include <cstring>
 
@@ -82,13 +85,18 @@ namespace
 class IoHidOutput : public OutputDevice
 {
 public:
-    IoHidOutput() : device(nullptr) {}
+    IoHidOutput() : device(nullptr), queue(nullptr) {}
 
     ~IoHidOutput() override
     {
         if (device)
         {
-            CFRelease(device);
+            // IOHIDUserDevice.h: the device must be cancelled before it is
+            // released. The cancel handler installed in create() performs the
+            // CFRelease once the queue has drained.
+            IOHIDUserDeviceCancel(device);
+
+            device = nullptr;
         }
     }
 
@@ -134,11 +142,28 @@ public:
             Log::error(
                 "[iohid] Could not create virtual gamepad. The "
                 "'com.apple.developer.hid.virtual.device' entitlement is "
-                "required — run as root (sudo), or sign with the entitlement "
-                "under reduced SIP. See driverkit/README.md.");
+                "required — sign with a provisioning profile that carries it "
+                "(Apple must assign the capability to your team), or use "
+                "reduced SIP. Running as root does NOT help. "
+                "See driverkit/README.md.");
 
             return;
         }
+
+        // A dispatch queue MUST be set before activating: IOHIDUserDeviceActivate
+        // aborts the process (os_crash) when the device has no queue. The cancel
+        // handler releases the device once the queue has drained — see the
+        // documented Activate/Cancel contract in IOHIDUserDevice.h.
+        queue = dispatch_queue_create(
+            "at.dergeorg.gamepadbridge.hid", DISPATCH_QUEUE_SERIAL);
+
+        IOHIDUserDeviceSetDispatchQueue(device, queue);
+
+        IOHIDUserDeviceRef cancelled = device;
+
+        IOHIDUserDeviceSetCancelHandler(device, ^{
+            CFRelease(cancelled);
+        });
 
         IOHIDUserDeviceActivate(device);
 
@@ -170,6 +195,11 @@ public:
 
 private:
     IOHIDUserDeviceRef device;
+
+    // Serial queue the HID device delivers its asynchronous events on. It
+    // outlives the device (the cancel handler runs on it), so it is kept for
+    // the lifetime of the process.
+    dispatch_queue_t queue;
 };
 
 std::unique_ptr<OutputDevice> makeOutputDevice()

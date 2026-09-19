@@ -40,14 +40,14 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-#ifndef VERSION
-#define VERSION "dev"
+#ifndef GAMEPADBRIDGE_VERSION
+#define GAMEPADBRIDGE_VERSION "dev"
 #endif
 
 int main()
 {
     Log::init();
-    Log::info("GamepadBridge %s (based on xow by Medusalix)", VERSION);
+    Log::info("GamepadBridge %s (based on xow by Medusalix)", GAMEPADBRIDGE_VERSION);
 
     sigset_t mask;
     sigemptyset(&mask);

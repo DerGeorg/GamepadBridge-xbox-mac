@@ -1410,9 +1410,9 @@ bool Mt76::initChannels()
 bool Mt76::loadFirmware()
 {
     // macOS port: allow overriding the firmware path via the XOW_FIRMWARE
-    // environment variable, falling back to the compile-time FIRMWARE default.
+    // environment variable, falling back to the compile-time GAMEPADBRIDGE_FIRMWARE default.
     const char *envPath = std::getenv("XOW_FIRMWARE");
-    const char *firmwarePath = (envPath && *envPath) ? envPath : FIRMWARE;
+    const char *firmwarePath = (envPath && *envPath) ? envPath : GAMEPADBRIDGE_FIRMWARE;
 
     std::ifstream file(firmwarePath, std::ios::binary | std::ios::ate);
 

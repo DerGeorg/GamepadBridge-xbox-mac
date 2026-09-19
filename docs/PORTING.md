@@ -56,7 +56,9 @@ GIP / controller code is unchanged.
 | Makefile / install/* | `CMakeLists.txt`, `scripts/get-firmware.sh` | **replaced** | macOS build + firmware extraction (`shasum`, Homebrew `cabextract`). |
 | — | `src/output.h` | **new** | OS-neutral output interface + `GamepadState`. |
 | — | `src/output_console.cpp` | **new** | Stage 1 backend (terminal). |
-| — | `src/output_driverkit.cpp` | **new** | Stage 2 backend (virtual HID). |
+| — | `src/output_driverkit.cpp` | **new** | Stage 2 backend (DriverKit variant). |
+| — | `src/output_iohid.cpp` | **new** | Stage 2 backend via the `IOHIDUserDevice` SPI. |
+| — | `src/output_corehid.cpp` + `src/corehid_shim.swift` | **new** | Stage 2 backend via CoreHID — the one that works. |
 | — | `driverkit/**` | **new** | DriverKit virtual-gamepad extension scaffold. |
 
 ## The output abstraction
@@ -68,8 +70,8 @@ GIP input ─▶ Controller::inputReceived ─▶ GamepadState ─▶ OutputDevi
 ```
 
 `OutputDevice` (in `src/output.h`) is the seam. The CMake option
-`-DXOW_BACKEND=console|driverkit` selects which backend `.cpp` provides the
-`makeOutputDevice()` factory, so the protocol core never changes.
+`-DXOW_BACKEND=console|iohid|corehid|driverkit` selects which backend `.cpp`
+provides the `makeOutputDevice()` factory, so the protocol core never changes.
 
 ## Verified on real hardware
 
@@ -94,14 +96,47 @@ Notes / still open:
 - **Stick Y sign** — kept as reported (+Y = up). Linux xow inverted it for the
   `uinput` convention; if a Stage 2 backend / game shows inverted Y, flip it
   there.
-- **Stage 2 (real gamepad)** — the DriverKit backend is still scaffold-only and
-  unbuilt (needs Xcode + Apple entitlement approval).
+- **Stage 2 (real gamepad)** — working via the CoreHID backend (see below).
+  The DriverKit variant remains scaffold-only and is not needed.
 
 ## Continuing the work
 
-- Finish Stage 2: write the companion `IOUserClient` subclass (selector 0 →
-  `postInputReport`) and the host app that activates the extension.
 - Optional `output_cgevent.cpp`: keyboard/mouse fallback needing no Apple
-  entitlements.
+  entitlements — useful for anyone without a paid membership.
+- Notarised Developer ID build so others can install it without their own
+  Apple account.
 - Rumble (host → controller): `GipDevice::performRumble` already exists; wire
   a backend `RumbleCallback` to it for force feedback.
+
+## Stage 2: publishing a virtual gamepad
+
+Three routes exist on macOS; only one is both supported and app-level:
+
+| Route | API | Verdict |
+|-------|-----|---------|
+| `IOHIDUserDevice` | C SPI in IOKit | Works, but undocumented. A dispatch queue **must** be set before `IOHIDUserDeviceActivate()` — otherwise it calls `os_crash` and aborts the process. |
+| **CoreHID `HIDVirtualDevice`** | Swift, macOS 15+ | **Used here.** Supported, failable init tells you when creation is refused. |
+| DriverKit dext | system extension | What Karabiner does. Needs its own Apple entitlement request; unnecessary for a virtual gamepad. |
+
+CoreHID is Swift-only, so `src/corehid_shim.swift` wraps it behind a small C ABI
+(`@_cdecl`) that the C++ core calls. Input reports are funnelled through an
+`AsyncStream` rather than spawning a Task per report — they arrive at ~125 Hz
+and their order matters. CMake enables the Swift language only for this backend
+(`enable_language(Swift)` inside the backend branch), so the other backends keep
+building with generators that have no Swift support.
+
+### Two traps worth remembering
+
+**A global `VERSION` macro breaks the SDK.** The build used to define
+`VERSION="..."` on the command line. C++ never noticed, but Swift compiles the
+whole IOKit Clang module, and `SCSICmds_INQUIRY_Definitions.h` declares
+`UInt8 VERSION;` — which the preprocessor happily turned into
+`UInt8 "f27db00";`. Macros injected build-wide must be namespaced; they are now
+`GAMEPADBRIDGE_VERSION` / `GAMEPADBRIDGE_FIRMWARE`.
+
+**Virtual HID creation fails silently.** When any prerequisite is missing, both
+APIs simply return nil/NULL: no error code, no entitlement complaint, nothing in
+the unified log beyond `[com.apple.iohid:userdevice] Destroy: <IOHIDUserDeviceRef
+ref:0/0 id:0x0>`. The culprit in practice was TCC, attributed to the *terminal
+app* that launched the binary rather than to the binary itself. See the Stage 2
+checklist in the README.
