@@ -218,6 +218,13 @@ option(XOW_MACOS_APP "Build a signed .app bundle (use with -G Xcode)" OFF)
 set(XOW_TEAM_ID "" CACHE STRING "Apple Developer Team ID for signing")
 set(XOW_BUNDLE_ID "at.dergeorg.gamepadbridge" CACHE STRING "App bundle identifier")
 
+# Development builds sign themselves automatically. A release has to be
+# explicit: Developer ID, a specific profile, and the hardened runtime, which
+# notarization refuses to proceed without.
+set(XOW_SIGN_STYLE "Automatic" CACHE STRING "Code sign style: Automatic or Manual")
+set(XOW_CODESIGN_IDENTITY "" CACHE STRING "Signing identity, e.g. 'Developer ID Application'")
+set(XOW_PROVISIONING_PROFILE "" CACHE STRING "Provisioning profile name or UUID")
+
 if(XOW_MACOS_APP)
     set(GPB_ICON ${CMAKE_SOURCE_DIR}/packaging/GamepadBridge.icns)
     target_sources(gamepadbridge PRIVATE ${GPB_ICON})
@@ -236,11 +243,27 @@ if(XOW_MACOS_APP)
         MACOSX_BUNDLE_INFO_PLIST
             "${CMAKE_SOURCE_DIR}/packaging/Info.plist.in"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER ${XOW_BUNDLE_ID}
-        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "${XOW_SIGN_STYLE}"
         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${XOW_TEAM_ID}"
+        XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES"
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
             "${CMAKE_SOURCE_DIR}/packaging/gamepadbridge.entitlements"
+
+        # The distributed bundle carries the project's proper name; the
+        # command-line build keeps the lowercase binary the docs refer to.
+        OUTPUT_NAME "GamepadBridge"
     )
+
+    if(XOW_CODESIGN_IDENTITY)
+        set_target_properties(gamepadbridge PROPERTIES
+            XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${XOW_CODESIGN_IDENTITY}")
+    endif()
+
+    if(XOW_PROVISIONING_PROFILE)
+        set_target_properties(gamepadbridge PROPERTIES
+            XCODE_ATTRIBUTE_PROVISIONING_PROFILE_SPECIFIER
+                "${XOW_PROVISIONING_PROFILE}")
+    endif()
 endif()
 
 message(STATUS "gamepadbridge ${XOW_VERSION}  backend=${XOW_BACKEND}  firmware=${XOW_FIRMWARE_PATH}")
