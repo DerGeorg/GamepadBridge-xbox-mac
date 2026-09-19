@@ -139,10 +139,21 @@ entitlements="$(codesign -d --entitlements - "$APP" 2>&1 || true)"
 grep -q "com.apple.developer.hid.virtual.device" <<< "$entitlements" \
     || die "the built app is missing the hid.virtual.device entitlement"
 
+# Xcode injects this when signing like a development build. It would let
+# anything attach a debugger to the shipped app, and notarization says no.
+if grep -q "com.apple.security.get-task-allow" <<< "$entitlements"; then
+    die "the app carries get-task-allow - set CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO"
+fi
+
 signature="$(codesign -d --verbose=2 "$APP" 2>&1 || true)"
 
 grep -q "flags=.*runtime" <<< "$signature" \
     || die "the hardened runtime is not enabled - notarization would reject it"
+
+# Without a secure timestamp the signature cannot be verified once the
+# certificate expires, so notarization refuses it.
+grep -q "^Timestamp=" <<< "$signature" \
+    || die "the signature has no secure timestamp - sign with --timestamp"
 
 libraries="$(otool -L "$APP/Contents/MacOS/GamepadBridge" 2>&1 || true)"
 
@@ -150,7 +161,7 @@ if grep -q "/opt/homebrew" <<< "$libraries"; then
     die "the app still links against Homebrew - it would not run elsewhere"
 fi
 
-echo "  entitlement, hardened runtime and dependencies all check out"
+echo "  entitlements, hardened runtime, timestamp and dependencies all check out"
 
 # ---------------------------------------------------------------------------
 step "Notarizing the app"

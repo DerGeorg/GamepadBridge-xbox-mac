@@ -246,6 +246,13 @@ if(XOW_MACOS_APP)
         XCODE_ATTRIBUTE_CODE_SIGN_STYLE "${XOW_SIGN_STYLE}"
         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${XOW_TEAM_ID}"
         XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES"
+
+        # Xcode signs like a development build unless told otherwise, and
+        # notarization rejects both results: it injects a get-task-allow
+        # entitlement (which would let anything attach a debugger to the
+        # shipped app) and it signs with --timestamp=none.
+        XCODE_ATTRIBUTE_CODE_SIGN_INJECT_BASE_ENTITLEMENTS "NO"
+        XCODE_ATTRIBUTE_OTHER_CODE_SIGN_FLAGS "--timestamp"
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
             "${CMAKE_SOURCE_DIR}/packaging/gamepadbridge.entitlements"
 
