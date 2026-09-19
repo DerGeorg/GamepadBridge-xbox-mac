@@ -22,10 +22,13 @@
 #include "output.h"
 #include "utils/log.h"
 #include "../driverkit/shared/gamepad_report.h"
+#include "xbox_bt_profile.h"
 
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
+#include <cstring>
+#include <string>
 
 // Implemented in corehid_shim.swift.
 extern "C" {
@@ -34,7 +37,9 @@ extern "C" {
                                uint32_t vendorId,
                                uint32_t productId,
                                uint64_t version,
-                               const char *product);
+                               const char *product,
+                               const char *manufacturer,
+                               const char *transport);
     void gpb_corehid_send(const uint8_t *bytes, long length);
     int32_t gpb_corehid_take_error(char *buffer, long capacity);
     void gpb_corehid_destroy(void);
@@ -43,18 +48,75 @@ extern "C" {
 namespace
 {
     /*
-     * Diagnostics: the system refuses to create our virtual device without
-     * giving a reason, so these two env vars isolate the two remaining
-     * suspects. Both are debugging aids, not normal operation.
+     * Which identity the virtual pad claims, and over which transport.
      *
-     *   GAMEPADBRIDGE_MINIMAL_HID=1   use a textbook-minimal descriptor
-     *                                 instead of our full Xbox layout
-     *   GAMEPADBRIDGE_NEUTRAL_IDS=1   stop claiming Microsoft's VID/PID, in
-     *                                 case macOS blocks impersonating the
-     *                                 vendor it special-cases for Xbox pads
+     * macOS only routes a HID device into GameController.framework (and thus
+     * into System Settings > Game Controllers and into games) when it both
+     * recognises the vendor/product pair and does not consider the device
+     * virtual: Apple confirmed that the framework deliberately skips virtual
+     * HID devices so synthesised input cannot be looped back into the OS.
+     * Both are therefore tunable without a rebuild.
+     *
+     *   GAMEPADBRIDGE_IDS=<preset>    identity to claim (see kIdentities)
+     *   GAMEPADBRIDGE_TRANSPORT=usb|bluetooth|ble|virtual|none
+     *   GAMEPADBRIDGE_MINIMAL_HID=1   textbook-minimal descriptor instead of
+     *                                 our full Xbox layout (descriptor bisect)
      */
     #define ENV_MINIMAL_HID "GAMEPADBRIDGE_MINIMAL_HID"
+    #define ENV_IDS         "GAMEPADBRIDGE_IDS"
+    #define ENV_TRANSPORT   "GAMEPADBRIDGE_TRANSPORT"
+    // Superseded by GAMEPADBRIDGE_IDS=neutral; still honoured.
     #define ENV_NEUTRAL_IDS "GAMEPADBRIDGE_NEUTRAL_IDS"
+
+    // Which report layout to publish. Generic is our own tidy descriptor;
+    // XboxBt is a byte-exact copy of the real controller's, needed because
+    // macOS parses recognised Xbox pads with its own fixed layout.
+    enum Profile { ProfileGeneric, ProfileXboxBt };
+
+    struct Identity
+    {
+        const char *preset;
+        uint32_t    vendorId;
+        uint32_t    productId;
+        const char *manufacturer;
+        const char *product;
+        const char *transport;
+        Profile     profile;
+    };
+
+    static_assert(sizeof(XboxBtReport) == 17,
+                  "Xbox Bluetooth input report must stay 17 bytes");
+
+    /*
+     * "xbox-bt" is the default because it is the only Xbox controller macOS
+     * supports natively: the Bluetooth firmware shared by the Xbox One S,
+     * Series X|S and Elite 2 pads. 0x02D1 (what the dongle actually reports)
+     * is the *wired* pad, which speaks GIP rather than HID, so macOS has no
+     * profile for it at all.
+     */
+    const Identity kIdentities[] =
+    {
+        { "xbox-bt",  0x045E, 0x0B13, "Microsoft",    "Xbox Wireless Controller",     "bluetooth", ProfileXboxBt  },
+        { "xbox-usb", 0x045E, 0x02D1, "Microsoft",    "Xbox One Wireless Controller", "usb",       ProfileGeneric },
+        { "x360",     0x045E, 0x028E, "Microsoft",    "Xbox 360 Controller",          "usb",       ProfileGeneric },
+        { "neutral",  0x1209, 0x0001, "GamepadBridge","GamepadBridge Test Pad",       "usb",       ProfileGeneric },
+    };
+
+    const Identity &resolveIdentity(const std::string &preset)
+    {
+        for (const Identity &candidate : kIdentities)
+        {
+            if (preset == candidate.preset)
+            {
+                return candidate;
+            }
+        }
+
+        Log::error("[corehid] Unknown " ENV_IDS " '%s', falling back to '%s'",
+                   preset.c_str(), kIdentities[0].preset);
+
+        return kIdentities[0];
+    }
 
     // Smallest descriptor that still is a game pad: 2 axes + 8 buttons,
     // three bytes per report.
@@ -102,6 +164,54 @@ namespace
         if (s.b) b |= 1u << 1;
         if (s.x) b |= 1u << 2;
         if (s.y) b |= 1u << 3;
+        r.buttons = b;
+
+        return r;
+    }
+
+    /*
+     * HID axis convention is the opposite of ours on the vertical: 0 is up,
+     * 65535 is down, whereas GamepadState keeps the controller's own +Y = up.
+     */
+    inline uint16_t axisUp(int16_t value)
+    {
+        return static_cast<uint16_t>(32767 - value);
+    }
+
+    inline uint16_t axisRight(int16_t value)
+    {
+        return static_cast<uint16_t>(value + 32768);
+    }
+
+    XboxBtReport mapStateXboxBt(const GamepadState &s)
+    {
+        XboxBtReport r;
+        std::memset(&r, 0, sizeof(r));
+
+        r.reportId = 0x01;
+
+        r.leftX  = axisRight(s.stickLeftX);
+        r.leftY  = axisUp(s.stickLeftY);
+        r.rightX = axisRight(s.stickRightX);
+        r.rightY = axisUp(s.stickRightY);
+
+        r.leftTrigger  = s.triggerLeft;
+        r.rightTrigger = s.triggerRight;
+
+        r.hat = gamepad_hat(s.dpadUp, s.dpadDown, s.dpadLeft, s.dpadRight);
+
+        uint16_t b = 0;
+        if (s.a)           b |= XBT_BTN_A;
+        if (s.b)           b |= XBT_BTN_B;
+        if (s.x)           b |= XBT_BTN_X;
+        if (s.y)           b |= XBT_BTN_Y;
+        if (s.bumperLeft)  b |= XBT_BTN_LB;
+        if (s.bumperRight) b |= XBT_BTN_RB;
+        if (s.select)      b |= XBT_BTN_VIEW;
+        if (s.start)       b |= XBT_BTN_MENU;
+        if (s.guide)       b |= XBT_BTN_GUIDE;
+        if (s.thumbLeft)   b |= XBT_BTN_LS;
+        if (s.thumbRight)  b |= XBT_BTN_RS;
         r.buttons = b;
 
         return r;
@@ -156,32 +266,62 @@ public:
     {
         minimal = std::getenv(ENV_MINIMAL_HID) != nullptr;
 
-        bool neutralIds = std::getenv(ENV_NEUTRAL_IDS) != nullptr;
+        const char *preset = std::getenv(ENV_IDS);
 
-        // Present as a Microsoft Xbox controller so GameController.framework
-        // recognises it, same as the IOHID backend — unless we are bisecting.
-        const char *name = neutralIds
-            ? "GamepadBridge Test Pad"
-            : (info.name.empty() ? "Xbox Wireless Controller" : info.name.c_str());
+        if (!preset && std::getenv(ENV_NEUTRAL_IDS))
+        {
+            preset = "neutral";
+        }
 
-        // pid.codes test IDs, deliberately not Microsoft's.
-        uint32_t vendorId  = neutralIds ? 0x1209 : (info.vendorId  ? info.vendorId  : 0x045E);
-        uint32_t productId = neutralIds ? 0x0001 : (info.productId ? info.productId : 0x02D1);
+        const Identity &identity = resolveIdentity(preset ? preset : "xbox-bt");
+
+        // An explicit transport wins; otherwise take the one that matches the
+        // identity, because a Bluetooth-only product ID arriving over "usb"
+        // is exactly the kind of mismatch the OS may sanity-check.
+        const char *transport = std::getenv(ENV_TRANSPORT);
+
+        if (!transport || !*transport)
+        {
+            transport = identity.transport;
+        }
+
+        // The minimal descriptor is a bisecting aid and overrides the profile.
+        profile = minimal ? ProfileGeneric : identity.profile;
+
+        const uint8_t *descriptor = kGamepadReportDescriptor;
+        size_t descriptorLength = sizeof(kGamepadReportDescriptor);
+        const char *shape = "generic";
+
+        if (minimal)
+        {
+            descriptor = kMinimalDescriptor;
+            descriptorLength = sizeof(kMinimalDescriptor);
+            shape = "minimal";
+        }
+
+        else if (profile == ProfileXboxBt)
+        {
+            descriptor = kXboxBtReportDescriptor;
+            descriptorLength = sizeof(kXboxBtReportDescriptor);
+            shape = "xbox-bt";
+        }
 
         Log::info(
-            "[corehid] mode: descriptor=%s ids=%04x:%04x (%s)",
-            minimal ? "minimal" : "full",
-            vendorId, productId,
-            neutralIds ? "neutral" : "microsoft");
+            "[corehid] mode: ids=%s (%04x:%04x) transport=%s descriptor=%s",
+            identity.preset,
+            identity.vendorId, identity.productId,
+            transport,
+            shape);
 
         int32_t result = gpb_corehid_create(
-            minimal ? kMinimalDescriptor : kGamepadReportDescriptor,
-            static_cast<long>(minimal ? sizeof(kMinimalDescriptor)
-                                      : sizeof(kGamepadReportDescriptor)),
-            vendorId,
-            productId,
+            descriptor,
+            static_cast<long>(descriptorLength),
+            identity.vendorId,
+            identity.productId,
             info.version,
-            name);
+            identity.product,
+            identity.manufacturer,
+            transport);
 
         if (result != 0)
         {
@@ -205,7 +345,8 @@ public:
 
         active = true;
 
-        Log::info("[corehid] Virtual gamepad created (presenting as %s)", name);
+        Log::info("[corehid] Virtual gamepad created (presenting as %s)",
+                  identity.product);
         Log::info("[corehid] Waiting for the first report to confirm it works...");
     }
 
@@ -223,6 +364,15 @@ public:
             gpb_corehid_send(
                 reinterpret_cast<const uint8_t *>(&small),
                 static_cast<long>(sizeof(small)));
+        }
+
+        else if (profile == ProfileXboxBt)
+        {
+            XboxBtReport report = mapStateXboxBt(state);
+
+            gpb_corehid_send(
+                reinterpret_cast<const uint8_t *>(&report),
+                static_cast<long>(sizeof(report)));
         }
 
         else
@@ -254,6 +404,7 @@ private:
     bool active;
     bool minimal = false;
     bool confirmed = false;
+    Profile profile = ProfileGeneric;
 };
 
 std::unique_ptr<OutputDevice> makeOutputDevice()

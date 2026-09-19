@@ -19,7 +19,7 @@ be rewritten.
 | Stage | What | Status |
 |-------|------|--------|
 | **Stage 1** | Talk to the dongle, pair a controller, show input **in the terminal** | ✅ **done & tested on real hardware** (macOS 26.5.1 arm64, adapter `045e:02fe`, controller 1537) |
-| **Stage 2** | Expose the input as a **real gamepad** games & emulators can use | ✅ **working** (macOS 27, CoreHID) — needs a paid Apple entitlement, see below |
+| **Stage 2** | Expose the input as a **real gamepad** games & emulators can use | ✅ **working** (macOS 27, CoreHID) — visible to both the raw-HID path and `GameController.framework`. Needs a paid Apple entitlement, see below |
 
 Stage 1 proves the dongle works on the Mac. Stage 2 turns it into a controller
 that games and emulators see.
@@ -126,13 +126,72 @@ error anywhere in the system log.
 
 Running as root does **not** substitute for any of this.
 
-Two diagnostic switches are built in, useful when creation is refused and you
-need to bisect the cause:
+### Tuning what the pad claims to be
 
 | Env var | Effect |
 |---------|--------|
-| `GAMEPADBRIDGE_MINIMAL_HID=1` | use a textbook-minimal descriptor instead of the full Xbox layout |
-| `GAMEPADBRIDGE_NEUTRAL_IDS=1` | advertise neutral pid.codes IDs instead of Microsoft's |
+| `GAMEPADBRIDGE_IDS=` | identity preset: `xbox-bt` (default, `045e:0b13`), `xbox-usb` (`045e:02d1`), `x360` (`045e:028e`), `neutral` (pid.codes `1209:0001`) |
+| `GAMEPADBRIDGE_TRANSPORT=` | `usb`, `bluetooth`, `ble`, `virtual`, or `none`; defaults to whatever matches the identity |
+| `GAMEPADBRIDGE_MINIMAL_HID=1` | textbook-minimal descriptor instead of the full Xbox layout |
+| `GAMEPADBRIDGE_SELFTEST=1` | publish the pad and wiggle it **without the dongle** — no hardware, no pairing |
+
+`GAMEPADBRIDGE_NEUTRAL_IDS=1` still works as an alias for `GAMEPADBRIDGE_IDS=neutral`.
+
+The self-test is the fast way to try combinations: it creates the virtual
+gamepad, circles the left stick and cycles A/B/X/Y until Ctrl-C.
+
+```sh
+GAMEPADBRIDGE_SELFTEST=1 GAMEPADBRIDGE_TRANSPORT=usb \
+    build-corehid/Release/gamepadbridge.app/Contents/MacOS/gamepadbridge
+```
+
+### Games and System Settings: the virtual-device filter
+
+A virtual gamepad that works at the HID level is **not automatically visible to
+games**. macOS has two separate paths:
+
+| Path | Who uses it | Status |
+|------|-------------|--------|
+| Raw HID (IOKit `IOHIDManager`) | SDL games, emulators, browsers, most engines | ✅ works out of the box |
+| `GameController.framework` | System Settings › Game Controllers, Apple-native ports | ✅ works — but only after clearing two hurdles |
+
+The second path took two separate fixes, because it fails **silently** both
+times:
+
+1. **It ignores virtual devices.** Apple confirmed this is deliberate: the
+   framework "is designed and tested for *real* (physical) game controllers"
+   and has "existing checks […] to ignore virtual HID devices, specifically to
+   prevent issues arising from looping game controller input back into the OS"
+   ([Apple Developer Forums, thread 812774](https://developer.apple.com/forums/thread/812774)).
+   A CoreHID device reports transport `Virtual` by default, so the pad never
+   appeared. Claiming a physical transport is what gets it enumerated.
+2. **It parses recognised controllers with its own layout.** Once macOS knows
+   the device by vendor/product ID, it stops caring what our descriptor says
+   and decodes reports the way the real controller sends them. Our own tidy
+   15-byte report was discarded without a word — the pad showed up in System
+   Settings and delivered nothing. `src/xbox_bt_profile.h` therefore publishes
+   a byte-exact copy of the real Xbox Bluetooth descriptor (283 bytes) and a
+   matching 17-byte report.
+
+To tell the two paths apart when something breaks, use the bundled probes:
+
+```sh
+# what GameController.framework sees; "watch" prints live button names
+clang -fobjc-arc -framework Foundation -framework GameController \
+      -o /tmp/gc-probe tools/gc-probe.m && /tmp/gc-probe watch
+```
+
+```sh
+# the raw HID path, independent of GameController
+clang -framework IOKit -framework CoreFoundation \
+      -o /tmp/hid-probe tools/hid-probe.c && /tmp/hid-probe
+```
+
+`gc-probe watch` is also how the button bit order in `xbox_bt_profile.h` was
+established: press each button in turn and read off the name macOS gives it.
+
+Apple explicitly does not guarantee that presenting a virtual device this way
+keeps working across macOS releases.
 
 ## What's tested — and what isn't
 
@@ -146,8 +205,12 @@ need to bisect the cause:
 - ✅ Runs **without `sudo`**.
 - ✅ Stage 2 **verified on macOS 27**: with the entitlement granted and the
   TCC permission in place, the virtual gamepad is created and reports stream
-  to it. `hidutil list` shows it as a Virtual transport game pad bound to
-  `AppleUserHIDEventDriver`.
+  to it. `hidutil list` shows it as a game pad bound to
+  `AppleUserHIDEventDriver`, and an `IOHIDManager` client matches and opens it.
+- ✅ Visible to `GameController.framework` as an Xbox One pad with a full
+  `extendedGamepad` profile: face buttons, bumpers, View/Menu, stick clicks,
+  d-pad and both analog triggers all report correctly.
+- ✅ **Verified in an actual game** (Unrailed) on macOS 27.
 
 ## License & firmware
 

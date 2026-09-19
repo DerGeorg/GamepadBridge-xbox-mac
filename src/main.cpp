@@ -31,18 +31,84 @@
  */
 
 #include "utils/log.h"
+#include "output.h"
 #include "dongle/usb.h"
 #include "dongle/dongle.h"
 
+#include <atomic>
+#include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
 #include <unistd.h>
 #include <sys/types.h>
 
 #ifndef GAMEPADBRIDGE_VERSION
 #define GAMEPADBRIDGE_VERSION "dev"
 #endif
+
+namespace
+{
+    /*
+     * Hardware-free smoke test (GAMEPADBRIDGE_SELFTEST=1).
+     *
+     * Publishes the virtual gamepad and wiggles it, without the dongle, a
+     * paired controller or any USB at all. That makes the expensive question
+     * — does macOS actually surface this device to games? — answerable in a
+     * few seconds, which matters because the answer depends on identity and
+     * transport settings that have to be tried in combination.
+     */
+    int runSelfTest(const sigset_t &mask)
+    {
+        std::unique_ptr<OutputDevice> output = makeOutputDevice();
+
+        DeviceInfo info;
+        info.version = 1;
+        info.name = "GamepadBridge Self-Test";
+
+        output->create(info);
+
+        std::atomic<bool> running(true);
+
+        std::thread pump([&output, &running]() {
+            GamepadState state;
+
+            for (int tick = 0; running; tick++)
+            {
+                const double phase = tick * 0.05;
+
+                state.stickLeftX = static_cast<int16_t>(30000 * std::sin(phase));
+                state.stickLeftY = static_cast<int16_t>(30000 * std::cos(phase));
+
+                // Cycle A/B/X/Y roughly once per second so the buttons move too.
+                state.a = (tick / 30) % 4 == 0;
+                state.b = (tick / 30) % 4 == 1;
+                state.x = (tick / 30) % 4 == 2;
+                state.y = (tick / 30) % 4 == 3;
+
+                output->update(state);
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(8));
+            }
+        });
+
+        Log::info("Self-test: left stick is circling and A/B/X/Y cycle. Ctrl-C to stop.");
+
+        int received = 0;
+
+        while (sigwait(&mask, &received) == 0 && received == SIGUSR1)
+        {
+            // Pairing has no meaning here; keep waiting for INT/TERM.
+        }
+
+        running = false;
+        pump.join();
+
+        return EXIT_SUCCESS;
+    }
+}
 
 int main()
 {
@@ -72,6 +138,13 @@ int main()
         return EXIT_FAILURE;
     }
 
+    if (std::getenv("GAMEPADBRIDGE_SELFTEST"))
+    {
+        Log::info("Self-test mode: publishing the virtual gamepad, no dongle needed.");
+
+        return runSelfTest(mask);
+    }
+
     UsbDeviceManager manager;
 
     // A failing USB transfer asks us to terminate: deliver a process-wide
@@ -89,11 +162,42 @@ int main()
         return EXIT_FAILURE;
     }
 
-    std::unique_ptr<UsbDevice> device = manager.getDevice({
-        { DONGLE_VID, DONGLE_PID_OLD },
-        { DONGLE_VID, DONGLE_PID_NEW },
-        { DONGLE_VID, DONGLE_PID_SURFACE }
-    }, terminate);
+    /*
+     * Opening the dongle can legitimately fail on a first try: a reset makes
+     * macOS re-enumerate it, so the device we just found is briefly gone.
+     * Retry instead of letting the exception escape main() — an uncaught
+     * throw aborts the process and buries a transient hiccup under a crash
+     * report.
+     */
+    std::unique_ptr<UsbDevice> device;
+
+    for (int attempt = 1; !device; attempt++)
+    {
+        try
+        {
+            device = manager.getDevice({
+                { DONGLE_VID, DONGLE_PID_OLD },
+                { DONGLE_VID, DONGLE_PID_NEW },
+                { DONGLE_VID, DONGLE_PID_SURFACE }
+            }, terminate);
+        }
+
+        catch (const UsbException &error)
+        {
+            if (attempt >= 5)
+            {
+                Log::error("Could not open the dongle: %s", error.what());
+                Log::error("Unplug the adapter, plug it back in, and make "
+                           "sure no second instance is running.");
+
+                return EXIT_FAILURE;
+            }
+
+            Log::info("%s - retrying (%d/5)", error.what(), attempt);
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+    }
 
     // Re-block before starting the dongle's worker threads.
     if (pthread_sigmask(SIG_BLOCK, &mask, nullptr) != 0)

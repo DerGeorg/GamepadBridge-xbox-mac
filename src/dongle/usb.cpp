@@ -48,18 +48,49 @@ UsbDevice::UsbDevice(
         throw UsbException("Error opening device", error);
     }
 
+    /*
+     * macOS re-enumerates on reset: the dongle drops off the bus and comes
+     * back as a new device, which invalidates this handle. libusb reports that
+     * as NOT_FOUND. It is not fatal — discovery simply has to run again — so
+     * report it as a retryable condition instead of killing the process.
+     */
     error = libusb_reset_device(handle);
+
+    if (error == LIBUSB_ERROR_NOT_FOUND || error == LIBUSB_ERROR_NO_DEVICE)
+    {
+        throw UsbException("Device re-enumerated after reset", error);
+    }
 
     if (error)
     {
         throw UsbException("Error resetting device", error);
     }
 
-    error = libusb_set_configuration(handle, 1);
+    /*
+     * Only configure the device when it is not already in configuration 1.
+     * On macOS, libusb_set_configuration() always goes down to IOKit's
+     * SetConfiguration(), which tears the interfaces down and re-enumerates
+     * even when the configuration is unchanged — and then every later call on
+     * this handle fails with NO_DEVICE. Linux short-circuits the no-op, which
+     * is why xow never had to care.
+     */
+    int configuration = 0;
+
+    error = libusb_get_configuration(handle, &configuration);
 
     if (error)
     {
-        throw UsbException("Error setting configuration", error);
+        throw UsbException("Error reading configuration", error);
+    }
+
+    if (configuration != 1)
+    {
+        error = libusb_set_configuration(handle, 1);
+
+        if (error)
+        {
+            throw UsbException("Error setting configuration", error);
+        }
     }
 
     error = libusb_claim_interface(handle, 0);

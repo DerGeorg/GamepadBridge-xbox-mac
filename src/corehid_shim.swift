@@ -13,6 +13,28 @@
 import Foundation
 import CoreHID
 
+// A virtual device defaults to Transport "Virtual", and GameController.framework
+// deliberately skips virtual HID devices (Apple DTS, developer forums thread
+// 812774) so that synthesised input cannot be looped back into the OS. Claiming
+// a physical transport is what lets us test whether that filter is the only
+// thing standing between the gamepad and GCController.
+private func parseTransport(_ name: String?) -> HIDDeviceTransport? {
+    switch name?.lowercased() {
+    case "usb":
+        return .usb
+    case "bluetooth", "bt":
+        return .bluetooth
+    case "ble", "bluetoothlowenergy":
+        return .bluetoothLowEnergy
+    case "virtual":
+        return .virtual
+    case nil, "", "none", "default":
+        return nil
+    case let other?:
+        return .unknown(other)
+    }
+}
+
 private final class VirtualPad: HIDVirtualDeviceDelegate, @unchecked Sendable {
     private var device: HIDVirtualDevice?
     private var continuation: AsyncStream<Data>.Continuation?
@@ -41,11 +63,15 @@ private final class VirtualPad: HIDVirtualDeviceDelegate, @unchecked Sendable {
                vendorID: UInt32,
                productID: UInt32,
                version: UInt64,
-               product: String) -> Bool {
+               product: String,
+               manufacturer: String,
+               transport: HIDDeviceTransport?) -> Bool {
         let properties = HIDVirtualDevice.Properties(descriptor: descriptor,
                                                      vendorID: vendorID,
                                                      productID: productID,
+                                                     transport: transport,
                                                      product: product,
+                                                     manufacturer: manufacturer,
                                                      versionNumber: version)
 
         // Failable, unlike the old IOHIDUserDevice SPI: if the system refuses
@@ -117,9 +143,13 @@ public func gpb_corehid_create(_ descriptor: UnsafePointer<UInt8>,
                                _ vendorID: UInt32,
                                _ productID: UInt32,
                                _ version: UInt64,
-                               _ product: UnsafePointer<CChar>) -> Int32 {
+                               _ product: UnsafePointer<CChar>,
+                               _ manufacturer: UnsafePointer<CChar>,
+                               _ transport: UnsafePointer<CChar>?) -> Int32 {
     let data = Data(bytes: descriptor, count: descriptorLength)
     let name = String(cString: product)
+    let vendor = String(cString: manufacturer)
+    let link = transport.map { String(cString: $0) }
 
     let instance = VirtualPad()
 
@@ -127,7 +157,9 @@ public func gpb_corehid_create(_ descriptor: UnsafePointer<UInt8>,
                          vendorID: vendorID,
                          productID: productID,
                          version: version,
-                         product: name) else {
+                         product: name,
+                         manufacturer: vendor,
+                         transport: parseTransport(link)) else {
         pad = instance   // keep it so the C side can read the error message
         return -1
     }
@@ -148,7 +180,7 @@ public func gpb_corehid_take_error(_ buffer: UnsafeMutablePointer<CChar>,
                                    _ capacity: Int) -> Int32 {
     guard let message = pad?.takeError() else { return 0 }
 
-    message.withCString { source in
+    _ = message.withCString { source in
         strlcpy(buffer, source, capacity)
     }
 

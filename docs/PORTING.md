@@ -140,3 +140,34 @@ the unified log beyond `[com.apple.iohid:userdevice] Destroy: <IOHIDUserDeviceRe
 ref:0/0 id:0x0>`. The culprit in practice was TCC, attributed to the *terminal
 app* that launched the binary rather than to the binary itself. See the Stage 2
 checklist in the README.
+
+### The virtual-device filter (why games may still see nothing)
+
+Publishing the HID device is only half of Stage 2. macOS routes controllers two
+ways, and they disagree about virtual devices:
+
+- **Raw HID** — `IOHIDManager`. SDL, emulators, browsers and most engines use
+  this. Our device works here: `hidutil list` shows it as a Virtual-transport
+  game pad bound to `AppleUserHIDEventDriver`, and an `IOHIDManager` client
+  matches and opens it.
+- **`GameController.framework`** — System Settings › Game Controllers and
+  Apple-native ports. It ignores our device. That is intentional: Apple states
+  the framework has "existing checks […] to ignore virtual HID devices,
+  specifically to prevent issues arising from looping game controller input
+  back into the OS" (developer forums thread 812774). It also only surfaces
+  controllers it recognises by vendor/product ID at all.
+
+Two consequences shaped the code:
+
+1. The vendor/product pair matters. `045e:02d1` — what the dongle reports — is
+   the *wired* Xbox One pad, which speaks GIP rather than HID, so macOS has no
+   profile for it. `GAMEPADBRIDGE_IDS` switches between presets; the default is
+   `xbox-bt` (`045e:0b13`), the Bluetooth firmware macOS does support.
+2. `HIDVirtualDevice.Properties` accepts a `transport`, so
+   `GAMEPADBRIDGE_TRANSPORT` can claim `usb`/`bluetooth` instead of the default
+   `Virtual`. Whether that defeats the filter is exactly what the switch is for.
+
+`GAMEPADBRIDGE_SELFTEST=1` publishes and wiggles the pad with no dongle, no
+pairing and no USB, so these combinations can be tried in seconds.
+`tools/gc-probe.m` asks `GameController.framework` what it sees, which is the
+only reliable way to tell the two paths apart.
