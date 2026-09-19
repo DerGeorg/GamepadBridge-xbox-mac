@@ -37,7 +37,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
@@ -54,12 +53,44 @@ namespace
     /*
      * Hardware-free smoke test (GAMEPADBRIDGE_SELFTEST=1).
      *
-     * Publishes the virtual gamepad and wiggles it, without the dongle, a
-     * paired controller or any USB at all. That makes the expensive question
-     * — does macOS actually surface this device to games? — answerable in a
-     * few seconds, which matters because the answer depends on identity and
-     * transport settings that have to be tried in combination.
+     * Publishes the virtual gamepad and walks every input in turn, without the
+     * dongle, a paired controller or any USB at all. Each step is announced
+     * before it is driven, so pairing this log with a watcher on the other end
+     * (tools/gc-probe.m) yields the mapping macOS actually applies — with no
+     * human in the loop to press things in the wrong order, which is exactly
+     * how a button map gets "measured" into the wrong answer.
      */
+    struct Step
+    {
+        const char *name;
+        std::function<void(GamepadState &)> apply;
+    };
+
+    const Step kSteps[] =
+    {
+        { "a",                [](GamepadState &s) { s.a = true; } },
+        { "b",                [](GamepadState &s) { s.b = true; } },
+        { "x",                [](GamepadState &s) { s.x = true; } },
+        { "y",                [](GamepadState &s) { s.y = true; } },
+        { "bumperLeft",       [](GamepadState &s) { s.bumperLeft = true; } },
+        { "bumperRight",      [](GamepadState &s) { s.bumperRight = true; } },
+        { "select (view)",    [](GamepadState &s) { s.select = true; } },
+        { "start (menu)",     [](GamepadState &s) { s.start = true; } },
+        { "thumbLeft (LS)",   [](GamepadState &s) { s.thumbLeft = true; } },
+        { "thumbRight (RS)",  [](GamepadState &s) { s.thumbRight = true; } },
+        { "guide (xbox)",     [](GamepadState &s) { s.guide = true; } },
+        { "dpadUp",           [](GamepadState &s) { s.dpadUp = true; } },
+        { "dpadRight",        [](GamepadState &s) { s.dpadRight = true; } },
+        { "dpadDown",         [](GamepadState &s) { s.dpadDown = true; } },
+        { "dpadLeft",         [](GamepadState &s) { s.dpadLeft = true; } },
+        { "leftStick right",  [](GamepadState &s) { s.stickLeftX = 32767; } },
+        { "leftStick up",     [](GamepadState &s) { s.stickLeftY = 32767; } },
+        { "rightStick right", [](GamepadState &s) { s.stickRightX = 32767; } },
+        { "rightStick up",    [](GamepadState &s) { s.stickRightY = 32767; } },
+        { "triggerLeft",      [](GamepadState &s) { s.triggerLeft = 1023; } },
+        { "triggerRight",     [](GamepadState &s) { s.triggerRight = 1023; } },
+    };
+
     int runSelfTest(const sigset_t &mask)
     {
         std::unique_ptr<OutputDevice> output = makeOutputDevice();
@@ -73,28 +104,42 @@ namespace
         std::atomic<bool> running(true);
 
         std::thread pump([&output, &running]() {
-            GamepadState state;
+            const size_t total = sizeof(kSteps) / sizeof(kSteps[0]);
 
-            for (int tick = 0; running; tick++)
+            // Hold each input for a beat and release it again, so a watcher
+            // sees exactly one press and one release per announced step.
+            auto hold = [&output, &running](const GamepadState &state, int ms) {
+                for (int elapsed = 0; elapsed < ms && running; elapsed += 8)
+                {
+                    output->update(state);
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                }
+            };
+
+            while (running)
             {
-                const double phase = tick * 0.05;
+                for (size_t i = 0; i < total && running; i++)
+                {
+                    GamepadState state;
 
-                state.stickLeftX = static_cast<int16_t>(30000 * std::sin(phase));
-                state.stickLeftY = static_cast<int16_t>(30000 * std::cos(phase));
+                    kSteps[i].apply(state);
 
-                // Cycle A/B/X/Y roughly once per second so the buttons move too.
-                state.a = (tick / 30) % 4 == 0;
-                state.b = (tick / 30) % 4 == 1;
-                state.x = (tick / 30) % 4 == 2;
-                state.y = (tick / 30) % 4 == 3;
+                    Log::info("self-test %2zu/%zu: %s",
+                              i + 1, total, kSteps[i].name);
 
-                output->update(state);
+                    hold(state, 700);
+                    hold(GamepadState(), 400);
+                }
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                if (running)
+                {
+                    Log::info("self-test: sweep complete, starting over");
+                }
             }
         });
 
-        Log::info("Self-test: left stick is circling and A/B/X/Y cycle. Ctrl-C to stop.");
+        Log::info("Self-test: walking every input in turn. Ctrl-C to stop.");
 
         int received = 0;
 

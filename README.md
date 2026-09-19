@@ -187,8 +187,18 @@ clang -framework IOKit -framework CoreFoundation \
       -o /tmp/hid-probe tools/hid-probe.c && /tmp/hid-probe
 ```
 
-`gc-probe watch` is also how the button bit order in `xbox_bt_profile.h` was
-established: press each button in turn and read off the name macOS gives it.
+`gc-probe watch` is how the button bit order in `xbox_bt_profile.h` was
+established. Don't do it by hand: `GAMEPADBRIDGE_SELFTEST=1` drives one input
+at a time and announces each, so the mapping falls out of putting the two logs
+side by side. Correlate them **by timestamp** — a step that lands on a bit
+macOS doesn't use produces no event at all, so counting lines quietly shifts
+everything after it and turns one wrong bit into a plausible-looking wrong
+answer.
+
+Everything maps except the **Xbox/Guide button**: this profile doesn't carry it
+in the gamepad report, and the Consumer "Record" usage the descriptor also
+declares never reaches GameController either. It is left unmapped rather than
+reported as something it isn't.
 
 Apple explicitly does not guarantee that presenting a virtual device this way
 keeps working across macOS releases.
@@ -208,8 +218,11 @@ keeps working across macOS releases.
   to it. `hidutil list` shows it as a game pad bound to
   `AppleUserHIDEventDriver`, and an `IOHIDManager` client matches and opens it.
 - ✅ Visible to `GameController.framework` as an Xbox One pad with a full
-  `extendedGamepad` profile: face buttons, bumpers, View/Menu, stick clicks,
-  d-pad and both analog triggers all report correctly.
+  `extendedGamepad` profile. All 21 inputs were swept individually and checked
+  against what macOS reports: 20 map correctly (face buttons, bumpers,
+  View/Menu, both stick clicks, all four d-pad directions, both sticks with
+  correct orientation, both analog triggers). The Xbox button is the
+  exception — see above.
 - ✅ **Verified in an actual game** (Unrailed) on macOS 27.
 
 ## License & firmware

@@ -209,10 +209,13 @@ namespace
         if (s.bumperRight) b |= XBT_BTN_RB;
         if (s.select)      b |= XBT_BTN_VIEW;
         if (s.start)       b |= XBT_BTN_MENU;
-        if (s.guide)       b |= XBT_BTN_GUIDE;
         if (s.thumbLeft)   b |= XBT_BTN_LS;
         if (s.thumbRight)  b |= XBT_BTN_RS;
         r.buttons = b;
+
+        // s.guide has nowhere to go: neither a button bit nor the Consumer
+        // "Record" usage reaches GameController, so the Xbox button stays
+        // unmapped rather than being reported as something it is not.
 
         return r;
     }

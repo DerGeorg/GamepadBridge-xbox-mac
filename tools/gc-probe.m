@@ -23,6 +23,17 @@
 #import <Foundation/Foundation.h>
 #import <GameController/GameController.h>
 
+// Every event carries the time it arrived: a self-test step that maps to an
+// unused control emits nothing at all, so matching a sweep by counting lines
+// silently goes wrong. Timestamps line up with the driver's own log.
+static void stamp(void)
+{
+    NSDateFormatter *f = [[NSDateFormatter alloc] init];
+    f.dateFormat = @"HH:mm:ss";
+
+    printf("%s  ", [f stringFromDate:[NSDate date]].UTF8String);
+}
+
 static void describe(GCController *c)
 {
     printf("  - vendor=%s category=%s extendedGamepad=%s\n",
@@ -86,6 +97,7 @@ static void watch(GCController *c)
         {
             GCControllerButtonInput *b = (GCControllerButtonInput *)el;
 
+            stamp();
             printf("%-22s %-4s value=%.3f\n",
                    name, b.isPressed ? "DOWN" : "up", b.value);
         }
@@ -93,11 +105,13 @@ static void watch(GCController *c)
         {
             GCControllerDirectionPad *d = (GCControllerDirectionPad *)el;
 
+            stamp();
             printf("%-22s x=%+.3f y=%+.3f\n",
                    name, d.xAxis.value, d.yAxis.value);
         }
         else if ([el isKindOfClass:[GCControllerAxisInput class]])
         {
+            stamp();
             printf("%-22s %+.3f\n",
                    name, ((GCControllerAxisInput *)el).value);
         }

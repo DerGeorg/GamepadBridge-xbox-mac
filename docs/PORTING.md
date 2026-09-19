@@ -171,3 +171,25 @@ Two consequences shaped the code:
 pairing and no USB, so these combinations can be tried in seconds.
 `tools/gc-probe.m` asks `GameController.framework` what it sees, which is the
 only reliable way to tell the two paths apart.
+
+### Measuring a button map instead of guessing one
+
+macOS decodes a controller it recognises with its own layout, so the bit
+positions in `src/xbox_bt_profile.h` had to be discovered empirically. Two
+things made that harder than it looks, and both produced confident wrong
+answers before being spotted:
+
+- **A press with no event is data too.** Of the twelve buttons the descriptor
+  declares, macOS uses ten; bits 10 and 11 produce nothing. Reading a sweep by
+  position therefore shifts every later step. Two separate readings of the same
+  data looked like a left/right stick-click swap, when the real error was
+  assuming Guide occupied bit 8 and pushing the stick clicks one place along.
+- **A human pressing buttons in order is not a reliable instrument.** The order
+  is what the measurement depends on, and it is the easiest thing to get wrong.
+
+`GAMEPADBRIDGE_SELFTEST=1` exists for this: it publishes the pad with no
+dongle, no pairing and no USB, drives one input at a time and announces each
+before driving it. `tools/gc-probe.m` timestamps every event it receives, in
+the same format as the driver's log, so the two logs correlate directly rather
+than by counting lines.
+

@@ -80,23 +80,33 @@ typedef struct __attribute__((packed))
 } XboxBtReport;
 
 /*
- * Button bit positions, measured rather than guessed: every bit was pressed
- * in turn while tools/gc-probe.m reported what GameController.framework made
- * of it. Bits 0..7 land where you would expect; the stick clicks are the
- * surprise, sitting right-before-left. Bit 8 produced no event at all, so
- * Guide is on the remaining index, 11.
+ * Button bit positions, measured rather than guessed: GAMEPADBRIDGE_SELFTEST
+ * drives one input at a time and announces each, while tools/gc-probe.m
+ * reports what GameController.framework makes of it.
+ *
+ * The ten buttons macOS uses are simply consecutive. Two details cost three
+ * measurement rounds to pin down, and both are worth remembering:
+ *
+ *   - There is no Guide bit. The Xbox button is not carried in this profile's
+ *     gamepad report at all, and the Consumer-page "Record" usage the
+ *     descriptor also declares produces no event either. Assuming Guide sat
+ *     at bit 8 pushed the stick clicks one place along and made the result
+ *     look like a left/right swap.
+ *   - A step that maps to an unused bit produces *nothing*, so a sweep where
+ *     several steps are silent cannot be read by position alone. Correlate by
+ *     timestamp, not by counting lines.
  */
 enum XboxBtButton
 {
-    XBT_BTN_A     = 1u << 0,
-    XBT_BTN_B     = 1u << 1,
-    XBT_BTN_X     = 1u << 2,
-    XBT_BTN_Y     = 1u << 3,
-    XBT_BTN_LB    = 1u << 4,
-    XBT_BTN_RB    = 1u << 5,
-    XBT_BTN_VIEW  = 1u << 6,
-    XBT_BTN_MENU  = 1u << 7,
-    XBT_BTN_RS    = 1u << 9,
-    XBT_BTN_LS    = 1u << 10,
-    XBT_BTN_GUIDE = 1u << 11,
+    XBT_BTN_A    = 1u << 0,
+    XBT_BTN_B    = 1u << 1,
+    XBT_BTN_X    = 1u << 2,
+    XBT_BTN_Y    = 1u << 3,
+    XBT_BTN_LB   = 1u << 4,
+    XBT_BTN_RB   = 1u << 5,
+    XBT_BTN_VIEW = 1u << 6,
+    XBT_BTN_MENU = 1u << 7,
+    XBT_BTN_LS   = 1u << 8,
+    XBT_BTN_RS   = 1u << 9,
+    // bits 10 and 11 are declared by the descriptor but unused by macOS
 };
