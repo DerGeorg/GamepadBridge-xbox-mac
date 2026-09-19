@@ -2,10 +2,10 @@
 #
 # Publishes a built disk image as a GitLab release.
 #
-# The token is read from the environment and never passed on the command
-# line, so it stays out of your shell history and out of the process list:
+# The token comes from the environment or from ~/.homelab/config, never from
+# an argument, so it stays out of your shell history and out of the process
+# list:
 #
-#   export GITLAB_TOKEN=...        # a project access token with api scope
 #   scripts/gitlab-release.sh 1.0.0
 #
 set -euo pipefail
@@ -20,7 +20,16 @@ die() { printf '\nERROR: %s\n' "$1" >&2; exit 1; }
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
 [ -n "$VERSION" ] || die "usage: $(basename "$0") <version>"
-[ -n "${GITLAB_TOKEN:-}" ] || die "set GITLAB_TOKEN to a token with api scope"
+
+# Note that GITLAB_PROJECT_ID in that file points at a different project, so
+# only the token is taken from it; the project is pinned above.
+if [ -z "${GITLAB_TOKEN:-}" ] && [ -f "$HOME/.homelab/config" ]; then
+    # shellcheck disable=SC1091
+    . "$HOME/.homelab/config"
+fi
+
+[ -n "${GITLAB_TOKEN:-}" ] || die "no GITLAB_TOKEN in the environment or \
+~/.homelab/config (needs api scope)"
 
 DMG="$ROOT/dist/GamepadBridge-$VERSION.dmg"
 [ -f "$DMG" ] || die "not found: $DMG (run scripts/release.sh first)"
