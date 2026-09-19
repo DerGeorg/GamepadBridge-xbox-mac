@@ -21,6 +21,10 @@
 # Usage:
 #   scripts/release.sh --keychain-profile gamepadbridge [--version 1.0.0]
 #   scripts/release.sh --skip-notarize            # local dry run
+#   scripts/release.sh --skip-build ...           # reuse the existing build
+#
+# Re-running is cheap: an app that is already notarized and stapled is kept
+# as it is. Only the step that actually failed repeats.
 #
 set -euo pipefail
 
@@ -31,6 +35,7 @@ PROFILE_NAME="GamepadBridge Developer ID"
 VERSION=""
 KEYCHAIN_PROFILE=""
 SKIP_NOTARIZE=0
+SKIP_BUILD=0
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="$ROOT/build-release"
@@ -45,6 +50,7 @@ while [ $# -gt 0 ]; do
         --version)          VERSION="$2"; shift 2 ;;
         --profile-name)     PROFILE_NAME="$2"; shift 2 ;;
         --skip-notarize)    SKIP_NOTARIZE=1; shift ;;
+        --skip-build)       SKIP_BUILD=1; shift ;;
         -h|--help)          sed -n '2,30p' "$0"; exit 0 ;;
         *)                  die "unknown argument: $1" ;;
     esac
@@ -107,8 +113,15 @@ echo "version:     $VERSION"
 # ---------------------------------------------------------------------------
 step "Building"
 # ---------------------------------------------------------------------------
-rm -rf "$BUILD" "$DIST"
 mkdir -p "$DIST"
+
+if [ "$SKIP_BUILD" -eq 1 ]; then
+    [ -d "$APP" ] || die "--skip-build was given but $APP does not exist"
+
+    echo "  reusing the existing build"
+else
+
+rm -rf "$BUILD"
 
 cmake -G Xcode \
     -DXOW_BACKEND=corehid \
@@ -128,6 +141,8 @@ xcodebuild -project "$BUILD/gamepadbridge.xcodeproj" \
     || { tail -40 "$BUILD/build.log"; die "build failed"; }
 
 [ -d "$APP" ] || die "expected $APP"
+
+fi
 
 # ---------------------------------------------------------------------------
 step "Verifying the signature"
@@ -168,6 +183,13 @@ step "Notarizing the app"
 # ---------------------------------------------------------------------------
 if [ "$SKIP_NOTARIZE" -eq 1 ]; then
     echo "  skipped (--skip-notarize)"
+
+elif xcrun stapler validate "$APP" > /dev/null 2>&1; then
+    # Already notarized and stapled by an earlier run that failed later on.
+    # Apple's notary service is slow enough that repeating this for nothing
+    # is the difference between a retry and starting over.
+    echo "  already notarized and stapled - keeping it"
+
 else
     # The app is notarized and stapled first, and only then wrapped in the
     # disk image: Homebrew installs the app out of the image, so the ticket
