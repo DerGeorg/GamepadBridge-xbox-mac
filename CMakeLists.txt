@@ -57,6 +57,44 @@ pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
 
 find_package(Threads REQUIRED)
 
+# A distributed app must not depend on Homebrew: linking the dylib from
+# /opt/homebrew means it refuses to launch on any Mac that has not installed
+# libusb. Static linking is therefore the default, with a fallback for the
+# unusual case of a libusb built without the archive.
+option(XOW_STATIC_LIBUSB
+    "Link libusb statically so the app runs without Homebrew" ON)
+
+set(LIBUSB_LINK ${LIBUSB_LIBRARIES})
+
+if(XOW_STATIC_LIBUSB)
+    find_library(LIBUSB_ARCHIVE
+        NAMES libusb-1.0.a
+        PATHS ${LIBUSB_LIBRARY_DIRS}
+        NO_DEFAULT_PATH)
+
+    if(LIBUSB_ARCHIVE)
+        # libusb's darwin backend pulls these in itself; with the dylib they
+        # come along automatically, with the archive they must be named.
+        find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
+        find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+        find_library(SECURITY_FRAMEWORK Security REQUIRED)
+
+        set(LIBUSB_LINK
+            ${LIBUSB_ARCHIVE}
+            objc
+            ${IOKIT_FRAMEWORK}
+            ${COREFOUNDATION_FRAMEWORK}
+            ${SECURITY_FRAMEWORK})
+
+        message(STATUS "Linking libusb statically: ${LIBUSB_ARCHIVE}")
+    else()
+        message(WARNING
+            "XOW_STATIC_LIBUSB is on but no libusb-1.0.a was found - falling "
+            "back to the shared library. The resulting app will only run on "
+            "machines that have libusb installed.")
+    endif()
+endif()
+
 # ---------------------------------------------------------------------------
 # Sources
 # ---------------------------------------------------------------------------
@@ -69,6 +107,7 @@ set(CORE_SOURCES
     src/controller/controller.cpp
     src/utils/log.cpp
     src/status.cpp
+    src/firmware.cpp
 )
 
 set(BACKEND_FRAMEWORKS "")
@@ -131,7 +170,7 @@ target_include_directories(gamepadbridge PRIVATE
 target_link_directories(gamepadbridge PRIVATE ${LIBUSB_LIBRARY_DIRS})
 
 target_link_libraries(gamepadbridge PRIVATE
-    ${LIBUSB_LIBRARIES}
+    ${LIBUSB_LINK}
     Threads::Threads
     ${BACKEND_FRAMEWORKS}
 )

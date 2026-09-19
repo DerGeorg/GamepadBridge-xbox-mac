@@ -33,6 +33,7 @@
 #include "utils/log.h"
 #include "output.h"
 #include "status.h"
+#include "firmware.h"
 #include "dongle/usb.h"
 #include "dongle/dongle.h"
 
@@ -49,8 +50,58 @@
 #define GAMEPADBRIDGE_VERSION "dev"
 #endif
 
+#ifdef GAMEPADBRIDGE_MENUBAR
+extern "C" void gpb_menubar_run(void);
+extern "C" void gpb_menubar_stop(void);
+extern "C" int gpb_confirm_firmware(const char *message);
+#endif
+
 namespace
 {
+    /*
+     * Ask before fetching the firmware: it is Microsoft's, and the user is the
+     * one accepting their terms. The menu bar build has a window server and
+     * asks in a dialog; otherwise this only works on a terminal, and refusing
+     * to guess is better than downloading on someone's behalf.
+     */
+    bool acquireFirmware(const std::string &path)
+    {
+        const std::string notice = Firmware::notice();
+
+#ifdef GAMEPADBRIDGE_MENUBAR
+        if (!gpb_confirm_firmware(notice.c_str()))
+        {
+            Log::info("Firmware download declined");
+
+            return false;
+        }
+#else
+        if (!isatty(STDIN_FILENO))
+        {
+            Log::error("The firmware is missing and there is no terminal to "
+                       "ask on.");
+            Log::error("Run scripts/get-firmware.sh, or point XOW_FIRMWARE at "
+                       "an existing copy.");
+
+            return false;
+        }
+
+        printf("\n%s\n\nDownload it now? [y/N]: ", notice.c_str());
+        fflush(stdout);
+
+        int answer = getchar();
+
+        if (answer != 'y' && answer != 'Y')
+        {
+            Log::info("Firmware download declined");
+
+            return false;
+        }
+#endif
+
+        return Firmware::download(path);
+    }
+
     /*
      * Hardware-free smoke test (GAMEPADBRIDGE_SELFTEST=1).
      *
@@ -155,11 +206,6 @@ namespace
         return EXIT_SUCCESS;
     }
 }
-
-#ifdef GAMEPADBRIDGE_MENUBAR
-extern "C" void gpb_menubar_run(void);
-extern "C" void gpb_menubar_stop(void);
-#endif
 
 namespace
 {
@@ -301,6 +347,17 @@ int main()
         Log::info("Self-test mode: publishing the virtual gamepad, no dongle needed.");
 
         return runSelfTest(mask);
+    }
+
+    /*
+     * Fetch the firmware before anything else starts: this runs on the main
+     * thread, which is where a dialog is allowed to appear.
+     */
+    const std::string firmware = Firmware::resolvePath();
+
+    if (!Firmware::isPresent(firmware) && !acquireFirmware(firmware))
+    {
+        return EXIT_FAILURE;
     }
 
 #ifdef GAMEPADBRIDGE_MENUBAR

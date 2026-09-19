@@ -33,9 +33,14 @@ that games and emulators see.
 
 ## Requirements
 
+Only needed to **build** GamepadBridge:
+
 ```sh
-brew install libusb pkg-config cmake cabextract
+brew install libusb pkg-config cmake
 ```
+
+A released build has no such dependency — libusb is linked statically, and
+the firmware is extracted with the `bsdtar` that ships with macOS.
 
 ## Stage 1 — build & run
 

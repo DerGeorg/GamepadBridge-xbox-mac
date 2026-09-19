@@ -144,3 +144,24 @@ public func gpb_menubar_stop() {
         }
     }
 }
+
+/*
+ * Asked before the firmware is fetched, from main() on the main thread and
+ * before app.run(), so NSAlert has an application to attach to.
+ */
+@_cdecl("gpb_confirm_firmware")
+public func gpb_confirm_firmware(_ message: UnsafePointer<CChar>) -> Int32 {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+
+    let alert = NSAlert()
+    alert.messageText = "GamepadBridge needs the adapter's firmware"
+    alert.informativeText = String(cString: message)
+    alert.alertStyle = .informational
+    alert.addButton(withTitle: "Download")
+    alert.addButton(withTitle: "Quit")
+
+    app.activate(ignoringOtherApps: true)
+
+    return alert.runModal() == .alertFirstButtonReturn ? 1 : 0
+}

@@ -17,6 +17,7 @@
  */
 
 #include "mt76.h"
+#include "../firmware.h"
 #include "../utils/log.h"
 
 #include <chrono>
@@ -1409,17 +1410,16 @@ bool Mt76::initChannels()
 
 bool Mt76::loadFirmware()
 {
-    // macOS port: allow overriding the firmware path via the XOW_FIRMWARE
-    // environment variable, falling back to the compile-time GAMEPADBRIDGE_FIRMWARE default.
-    const char *envPath = std::getenv("XOW_FIRMWARE");
-    const char *firmwarePath = (envPath && *envPath) ? envPath : GAMEPADBRIDGE_FIRMWARE;
+    // macOS port: one place decides where the firmware lives, so the startup
+    // check and this loader can never disagree about the path.
+    const std::string path = Firmware::resolvePath();
 
-    std::ifstream file(firmwarePath, std::ios::binary | std::ios::ate);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
 
     if (!file)
     {
-        Log::error("Failed to open %s", firmwarePath);
-        Log::info("Run get-firmware.sh or set XOW_FIRMWARE to the firmware path");
+        Log::error("Failed to open %s", path.c_str());
+        Log::info("Run scripts/get-firmware.sh or set XOW_FIRMWARE");
 
         return false;
     }

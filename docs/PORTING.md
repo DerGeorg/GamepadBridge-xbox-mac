@@ -53,7 +53,7 @@ GIP / controller code is unchanged.
 | `controller/input.{h,cpp}` | — | **dropped** | Linux `uinput`. Replaced by `src/output*.cpp`. |
 | `utils/reader.{h,cpp}` | — | **dropped** | Only used by `input.cpp` and the old `signalfd` loop. |
 | `xow.cpp` | `src/main.cpp` | **rewritten** | `signalfd` → `sigwait`; same INT/TERM/USR1 semantics. |
-| Makefile / install/* | `CMakeLists.txt`, `scripts/get-firmware.sh` | **replaced** | macOS build + firmware extraction (`shasum`, Homebrew `cabextract`). |
+| Makefile / install/* | `CMakeLists.txt`, `scripts/get-firmware.sh` | **replaced** | macOS build + firmware extraction. Uses `bsdtar`, which ships with macOS and reads CAB archives, so no Homebrew is involved. |
 | — | `src/output.h` | **new** | OS-neutral output interface + `GamepadState`. |
 | — | `src/output_console.cpp` | **new** | Stage 1 backend (terminal). |
 | — | `src/output_driverkit.cpp` | **new** | Stage 2 backend (DriverKit variant). |

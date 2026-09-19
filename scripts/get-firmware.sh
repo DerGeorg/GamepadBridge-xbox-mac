@@ -29,8 +29,8 @@ fail() { echo "ERROR: $1" >&2; exit 1; }
 
 command -v curl >/dev/null 2>&1 || fail "curl not found"
 command -v shasum >/dev/null 2>&1 || fail "shasum not found"
-command -v cabextract >/dev/null 2>&1 || \
-    fail "cabextract not found — install it with: brew install cabextract"
+# bsdtar ships with macOS and reads CAB archives, so this needs no Homebrew.
+command -v bsdtar >/dev/null 2>&1 || fail "bsdtar not found"
 
 echo "This downloads firmware covered by the Microsoft Terms of Use:"
 echo "  https://www.microsoft.com/en-us/legal/terms-of-use"
@@ -48,7 +48,7 @@ echo "Downloading driver package..."
 curl -L --fail -o "$TMP/driver.cab" "$URL"
 
 echo "Extracting $CAB_MEMBER..."
-cabextract -d "$TMP" -F "$CAB_MEMBER" "$TMP/driver.cab"
+bsdtar -xOf "$TMP/driver.cab" "$CAB_MEMBER" > "$TMP/$CAB_MEMBER"
 
 echo "Verifying checksum..."
 echo "$SHA256  $TMP/$CAB_MEMBER" | shasum -a 256 -c - \
