@@ -67,8 +67,14 @@ DMG="$DIST/GamepadBridge-$VERSION.dmg"
 # ---------------------------------------------------------------------------
 step "Checking prerequisites"
 # ---------------------------------------------------------------------------
-security find-identity -v -p codesigning \
-    | grep -q "$IDENTITY: .*($TEAM_ID)" \
+# Every check below captures its output first rather than piping into
+# `grep -q`. grep exits at the matching line and closes the pipe, the writer
+# takes a SIGPIPE, and `set -o pipefail` turns a *successful* match into a
+# failed pipeline — which is exactly how the hardened runtime check managed
+# to report the opposite of the truth.
+identities="$(security find-identity -v -p codesigning 2>&1 || true)"
+
+grep -q "$IDENTITY: .*($TEAM_ID)" <<< "$identities" \
     || die "no '$IDENTITY' certificate for team $TEAM_ID in the keychain"
 
 PROFILE_DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
@@ -128,14 +134,19 @@ step "Verifying the signature"
 # ---------------------------------------------------------------------------
 codesign --verify --strict --verbose=2 "$APP" 2>&1 | sed 's/^/  /'
 
-codesign -d --entitlements - "$APP" 2>&1 \
-    | grep -q "com.apple.developer.hid.virtual.device" \
+entitlements="$(codesign -d --entitlements - "$APP" 2>&1 || true)"
+
+grep -q "com.apple.developer.hid.virtual.device" <<< "$entitlements" \
     || die "the built app is missing the hid.virtual.device entitlement"
 
-codesign -d --verbose=2 "$APP" 2>&1 | grep -q "flags=.*runtime" \
+signature="$(codesign -d --verbose=2 "$APP" 2>&1 || true)"
+
+grep -q "flags=.*runtime" <<< "$signature" \
     || die "the hardened runtime is not enabled - notarization would reject it"
 
-if otool -L "$APP/Contents/MacOS/GamepadBridge" | grep -q "/opt/homebrew"; then
+libraries="$(otool -L "$APP/Contents/MacOS/GamepadBridge" 2>&1 || true)"
+
+if grep -q "/opt/homebrew" <<< "$libraries"; then
     die "the app still links against Homebrew - it would not run elsewhere"
 fi
 
