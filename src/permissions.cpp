@@ -51,8 +51,24 @@ Permissions::Access Permissions::requestInputMonitoring()
     if (manager)
     {
         IOHIDManagerSetDeviceMatching(manager, nullptr);
+
+        /*
+         * Scheduling on a run loop and then turning it is the part that
+         * matters. IOHIDManagerOpen on its own returns without touching a
+         * device; the devices are only opened as the run loop runs, and it is
+         * that attempt which raises the request. An earlier version skipped
+         * this and registered nothing at all.
+         */
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(),
+                                        kCFRunLoopDefaultMode);
+
         IOHIDManagerOpen(manager, kIOHIDOptionsTypeNone);
+
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.5, false);
+
         IOHIDManagerClose(manager, kIOHIDOptionsTypeNone);
+        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetCurrent(),
+                                          kCFRunLoopDefaultMode);
 
         CFRelease(manager);
     }
@@ -72,10 +88,10 @@ const char *gpb_permission_message(void)
            "gamepad that games and System Settings see. Without it the "
            "controller connects but nothing receives its input.\n\n"
            "1. Open System Settings below\n"
-           "2. Switch GamepadBridge on under Input Monitoring\n"
-           "3. If it is not listed, add it with + from your Applications "
-           "folder\n\n"
-           "This window stays open and notices by itself once you have.";
+           "2. Switch GamepadBridge on under Input Monitoring\n\n"
+           "Not in the list? Use \"Show Me the App\", then drag "
+           "GamepadBridge from the Finder window onto the list.\n\n"
+           "This window stays open and notices by itself once you are done.";
 }
 
 const char *gpb_permission_settings_url(void)

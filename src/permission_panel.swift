@@ -41,9 +41,16 @@ final class PermissionPanel: NSObject {
                             action: #selector(openSettings))
         open.keyEquivalent = "\r"
 
+        // Dragging the app onto the list always works, whatever macOS does
+        // or does not do about registering it. Finding it in a folder is the
+        // part people get stuck on, so do that for them.
+        let reveal = NSButton(title: "Show Me the App", target: self,
+                              action: #selector(revealApp))
+
         let quit = NSButton(title: "Quit", target: self, action: #selector(quit))
 
         buttons.addArrangedSubview(open)
+        buttons.addArrangedSubview(reveal)
         buttons.addArrangedSubview(quit)
 
         content.addArrangedSubview(heading)
@@ -113,6 +120,10 @@ final class PermissionPanel: NSObject {
         guard let url = URL(string: settings) else { return }
 
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func revealApp() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
 
     @objc private func quit() {

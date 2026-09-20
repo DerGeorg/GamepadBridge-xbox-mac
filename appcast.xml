@@ -6,6 +6,15 @@
     <description>GamepadBridge updates</description>
     <language>en</language>
     <item>
+      <title>GamepadBridge 1.0.4</title>
+      <pubDate>Sun, 20 Sep 2026 10:48:50 -0000</pubDate>
+      <sparkle:version>1.0.4</sparkle:version>
+      <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <link>https://gitlab.dergeorg.at/mac/gamepadbridge/-/releases/v1.0.4</link>
+      <enclosure url="https://gitlab.dergeorg.at/api/v4/projects/mac%2Fgamepadbridge/packages/generic/gamepadbridge/1.0.4/GamepadBridge.dmg" length="2005671" type="application/octet-stream" sparkle:edSignature="I1/UCdPi6pI8fn9rRONnui0NdbbXCGbDIxwUWx82prm0VvG7t8kl0uoCrFslX4i/NLGe0QymF2Gqr7dKLEGkDg==" />
+    </item>
+    <item>
       <title>GamepadBridge 1.0.3</title>
       <pubDate>Sun, 20 Sep 2026 09:41:33 -0000</pubDate>
       <sparkle:version>1.0.3</sparkle:version>
