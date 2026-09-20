@@ -25,8 +25,14 @@ Or with Homebrew:
 
 ```sh
 brew tap dergeorg/tap https://gitlab.dergeorg.at/mac/homebrew-tap.git
+brew trust --cask dergeorg/tap/gamepadbridge
 brew install --cask gamepadbridge
 ```
+
+The `brew trust` step is not boilerplate: a cask is executable Ruby, so
+Homebrew refuses to load one from a third-party tap until you say you trust
+it. Read [the cask](https://gitlab.dergeorg.at/mac/homebrew-tap/-/blob/main/Casks/gamepadbridge.rb)
+first — it is 50 lines.
 
 It runs as a **menu bar item**, not a window: the icon shows whether a
 controller is connected, and the menu has the battery level, a pairing button
