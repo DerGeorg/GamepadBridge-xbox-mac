@@ -121,6 +121,7 @@ set(CORE_SOURCES
     src/utils/log.cpp
     src/status.cpp
     src/firmware.cpp
+    src/permissions.cpp
 )
 
 set(BACKEND_FRAMEWORKS "")

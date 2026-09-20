@@ -34,6 +34,7 @@
 #include "output.h"
 #include "status.h"
 #include "firmware.h"
+#include "permissions.h"
 #include "dongle/usb.h"
 #include "dongle/dongle.h"
 
@@ -54,10 +55,68 @@
 extern "C" void gpb_menubar_run(void);
 extern "C" void gpb_menubar_stop(void);
 extern "C" int gpb_confirm_firmware(const char *message);
+extern "C" int gpb_permission_alert(const char *message, const char *url);
 #endif
 
 namespace
 {
+    /*
+     * macOS gates publishing a virtual HID device behind Input Monitoring,
+     * and refuses silently: CoreHID just returns nil, with no prompt and
+     * nothing in the log. So ask for it explicitly rather than letting the
+     * app come up looking fine and doing nothing.
+     *
+     * Returns false only when the user chooses to quit. Otherwise it carries
+     * on without the permission, because macOS offers its own "Quit and
+     * Reopen" once the switch is flipped — and only for an app that is
+     * actually running.
+     */
+    bool ensureInputMonitoring()
+    {
+        using Permissions::Access;
+
+        Access access = Permissions::inputMonitoring();
+
+        if (access == Access::Unknown)
+        {
+            Log::info("Asking for Input Monitoring permission...");
+
+            access = Permissions::requestInputMonitoring();
+        }
+
+        if (access == Access::Granted)
+        {
+            return true;
+        }
+
+        const char *message =
+            "GamepadBridge needs Input Monitoring to publish the virtual "
+            "gamepad that games and System Settings see. Without it the "
+            "controller connects but nothing receives its input.\n\n"
+            "Switch GamepadBridge on under Privacy & Security > Input "
+            "Monitoring. macOS will then offer to restart the app.";
+
+        Log::error("Input Monitoring is not granted.");
+
+        Status::setConnection("Needs Input Monitoring", false);
+
+#ifdef GAMEPADBRIDGE_MENUBAR
+        if (!gpb_permission_alert(message, Permissions::settingsURL()))
+        {
+            return false;
+        }
+
+        Log::info("Waiting for the permission - macOS will offer to restart "
+                  "GamepadBridge once you grant it.");
+#else
+        Log::error("%s", message);
+        Log::error("Grant it to whichever app launches this binary, not to "
+                   "the binary itself.");
+#endif
+
+        return true;
+    }
+
     /*
      * Ask before fetching the firmware: it is Microsoft's, and the user is the
      * one accepting their terms. The menu bar build has a window server and
@@ -347,6 +406,15 @@ int main()
         Log::info("Self-test mode: publishing the virtual gamepad, no dongle needed.");
 
         return runSelfTest(mask);
+    }
+
+    // Permission first: granting it means restarting, and finding that out
+    // after a firmware download and a pairing dance is worse.
+    if (!ensureInputMonitoring())
+    {
+        Log::info("Shutting down...");
+
+        return EXIT_SUCCESS;
     }
 
     /*

@@ -263,3 +263,36 @@ public func gpb_confirm_firmware(_ message: UnsafePointer<CChar>) -> Int32 {
 
     return alert.runModal() == .alertFirstButtonReturn ? 1 : 0
 }
+
+/*
+ * Shown when Input Monitoring is missing. Returns 1 to carry on, 0 to quit.
+ *
+ * Carrying on matters: macOS only offers its own "Quit and Reopen" button
+ * when the app granted the permission is actually running. An app that exits
+ * first leaves the user to find and start it again themselves.
+ */
+@_cdecl("gpb_permission_alert")
+public func gpb_permission_alert(_ message: UnsafePointer<CChar>,
+                                 _ settingsURL: UnsafePointer<CChar>) -> Int32 {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+
+    let alert = NSAlert()
+    alert.messageText = "GamepadBridge needs permission"
+    alert.informativeText = String(cString: message)
+    alert.alertStyle = .warning
+    alert.addButton(withTitle: "Open System Settings")
+    alert.addButton(withTitle: "Quit")
+
+    app.activate(ignoringOtherApps: true)
+
+    guard alert.runModal() == .alertFirstButtonReturn else {
+        return 0
+    }
+
+    if let url = URL(string: String(cString: settingsURL)) {
+        NSWorkspace.shared.open(url)
+    }
+
+    return 1
+}
