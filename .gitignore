@@ -5,3 +5,12 @@ build*/
 dist/
 *.dmg
 third_party/
+
+# Sparkle's private update signing key. It normally lives only in the login
+# keychain, so there is nothing here to ignore — these patterns exist for the
+# moment someone exports it with `generate_keys -x` to make a backup and
+# leaves the file in the working tree. Whoever holds this key can hand every
+# installed copy arbitrary code as a signed update.
+*.private-key
+sparkle_private*
+dsa_priv.pem
