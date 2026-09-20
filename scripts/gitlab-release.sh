@@ -17,6 +17,20 @@ VERSION="${1:-}"
 NOTES_FILE="${2:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Read just the one line rather than sourcing the file. Sourcing executes
+# whatever else is in there, and a value containing an unquoted $ is enough to
+# abort the whole script under `set -u` — which is a confusing way to fail at
+# a step that has nothing to do with it.
+read_token() {
+    local config="$HOME/.homelab/config"
+
+    [ -f "$config" ] || return 0
+
+    GITLAB_TOKEN="$(sed -n \
+        's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}GITLAB_TOKEN=//p' \
+        "$config" | tail -1 | sed "s/^[\"']//; s/[\"']$//")"
+}
+
 die() { printf '\nERROR: %s\n' "$1" >&2; exit 1; }
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
@@ -24,9 +38,8 @@ step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
 # Note that GITLAB_PROJECT_ID in that file points at a different project, so
 # only the token is taken from it; the project is pinned above.
-if [ -z "${GITLAB_TOKEN:-}" ] && [ -f "$HOME/.homelab/config" ]; then
-    # shellcheck disable=SC1091
-    . "$HOME/.homelab/config"
+if [ -z "${GITLAB_TOKEN:-}" ]; then
+    read_token
 fi
 
 [ -n "${GITLAB_TOKEN:-}" ] || die "no GITLAB_TOKEN in the environment or \
