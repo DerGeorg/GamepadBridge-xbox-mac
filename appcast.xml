@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>GamepadBridge</title>
+    <link>https://gitlab.dergeorg.at/mac/gamepadbridge/-/raw/main/appcast.xml</link>
+    <description>GamepadBridge updates</description>
+    <language>en</language>
+    <item>
+      <title>GamepadBridge 1.0.1</title>
+      <pubDate>Sun, 20 Sep 2026 09:00:12 -0000</pubDate>
+      <sparkle:version>1.0.1</sparkle:version>
+      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <link>https://gitlab.dergeorg.at/mac/gamepadbridge/-/releases/v1.0.1</link>
+      <enclosure url="https://gitlab.dergeorg.at/api/v4/projects/mac%2Fgamepadbridge/packages/generic/gamepadbridge/1.0.1/GamepadBridge.dmg" length="2016488" type="application/octet-stream" sparkle:edSignature="RwxithZjPmoP9f664O2hdONn8Uth6q22oYulPUOPoULWx58qvTSbILrnb4GkhcjyZQjhTnGSkWXM5MWdcPugBA==" />
+    </item>
+  </channel>
+</rss>
