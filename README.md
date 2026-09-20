@@ -35,6 +35,12 @@ GamepadBridge fixes that. Plug in the adapter, pair the controller, and it
 shows up as a proper game controller: in System Settings, in Steam, in
 emulators, in anything that reads a gamepad.
 
+<div align="center">
+
+<img src="docs/menu.png" width="269" alt="The GamepadBridge menu open in the macOS menu bar: Controller connected, a battery level, Pair a Controller, the version, and Quit">
+
+</div>
+
 ## Install
 
 ```sh
