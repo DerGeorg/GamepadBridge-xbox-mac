@@ -4,6 +4,7 @@
  */
 
 #include "permissions.h"
+#include "status_c.h"
 
 #include <IOKit/hid/IOHIDManager.h>
 #include <IOKit/hidsystem/IOHIDLib.h>
@@ -63,4 +64,21 @@ const char *Permissions::settingsURL()
 {
     return "x-apple.systempreferences:com.apple.preference.security"
            "?Privacy_ListenEvent";
+}
+
+const char *gpb_permission_message(void)
+{
+    return "GamepadBridge needs Input Monitoring to publish the virtual "
+           "gamepad that games and System Settings see. Without it the "
+           "controller connects but nothing receives its input.\n\n"
+           "1. Open System Settings below\n"
+           "2. Switch GamepadBridge on under Input Monitoring\n"
+           "3. If it is not listed, add it with + from your Applications "
+           "folder\n\n"
+           "This window stays open and notices by itself once you have.";
+}
+
+const char *gpb_permission_settings_url(void)
+{
+    return Permissions::settingsURL();
 }

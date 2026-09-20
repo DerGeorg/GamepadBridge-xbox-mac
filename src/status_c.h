@@ -24,6 +24,19 @@ int  gpb_status_controller_present(void);
 void gpb_request_pairing(void);
 void gpb_request_quit(void);
 
+// 1 once Input Monitoring is granted. Polled by the permission panel so it
+// can close itself and restart the app rather than leaving the user to.
+int gpb_permission_granted(void);
+
+// Set before gpb_menubar_run when the permission is missing.
+void gpb_set_needs_permission(int needed);
+int  gpb_needs_permission(void);
+
+// One wording, used by both the window and the terminal build, so the two
+// cannot drift into saying different things.
+const char *gpb_permission_message(void);
+const char *gpb_permission_settings_url(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -151,7 +151,7 @@ elseif(XOW_BACKEND STREQUAL "corehid")
         ${FOUNDATION_FRAMEWORK})
 
     if(XOW_MENUBAR)
-        list(APPEND CORE_SOURCES src/menubar.swift src/update_check.swift)
+        list(APPEND CORE_SOURCES src/menubar.swift src/update_check.swift src/permission_panel.swift)
         find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
         list(APPEND BACKEND_FRAMEWORKS ${APPKIT_FRAMEWORK})
         set(XOW_MENUBAR_ACTIVE ON)

@@ -4,7 +4,9 @@
  */
 
 #include "status.h"
+#include "permissions.h"
 
+#include <atomic>
 #include <csignal>
 #include <cstring>
 #include <mutex>
@@ -76,4 +78,25 @@ void gpb_request_pairing(void)
 void gpb_request_quit(void)
 {
     kill(getpid(), SIGTERM);
+}
+
+namespace
+{
+    std::atomic<bool> needsPermission{false};
+}
+
+int gpb_permission_granted(void)
+{
+    return Permissions::inputMonitoring() == Permissions::Access::Granted
+        ? 1 : 0;
+}
+
+void gpb_set_needs_permission(int needed)
+{
+    needsPermission = needed != 0;
+}
+
+int gpb_needs_permission(void)
+{
+    return needsPermission ? 1 : 0;
 }

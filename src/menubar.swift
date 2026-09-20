@@ -212,6 +212,7 @@ private final class MenuBar: NSObject {
 }
 
 nonisolated(unsafe) private var menuBar: MenuBar?
+nonisolated(unsafe) private var permissionPanel: PermissionPanel?
 
 // MARK: - C ABI consumed by src/main.cpp
 
@@ -223,6 +224,16 @@ public func gpb_menubar_run() {
     app.setActivationPolicy(.accessory)
 
     menuBar = MenuBar()
+
+    if gpb_needs_permission() != 0 {
+        let url = gpb_permission_settings_url().map { String(cString: $0) } ?? ""
+        let text = gpb_permission_message().map { String(cString: $0) } ?? ""
+
+        let panel = PermissionPanel(settingsURL: url)
+        panel.show(message: text)
+
+        permissionPanel = panel
+    }
 
     app.run()
 }
@@ -272,37 +283,4 @@ public func gpb_confirm_firmware(_ message: UnsafePointer<CChar>) -> Int32 {
     app.activate(ignoringOtherApps: true)
 
     return alert.runModal() == .alertFirstButtonReturn ? 1 : 0
-}
-
-/*
- * Shown when Input Monitoring is missing. Returns 1 to carry on, 0 to quit.
- *
- * Carrying on matters: macOS only offers its own "Quit and Reopen" button
- * when the app granted the permission is actually running. An app that exits
- * first leaves the user to find and start it again themselves.
- */
-@_cdecl("gpb_permission_alert")
-public func gpb_permission_alert(_ message: UnsafePointer<CChar>,
-                                 _ settingsURL: UnsafePointer<CChar>) -> Int32 {
-    let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
-
-    let alert = NSAlert()
-    alert.messageText = "GamepadBridge needs permission"
-    alert.informativeText = String(cString: message)
-    alert.alertStyle = .warning
-    alert.addButton(withTitle: "Open System Settings")
-    alert.addButton(withTitle: "Quit")
-
-    app.activate(ignoringOtherApps: true)
-
-    guard alert.runModal() == .alertFirstButtonReturn else {
-        return 0
-    }
-
-    if let url = URL(string: String(cString: settingsURL)) {
-        NSWorkspace.shared.open(url)
-    }
-
-    return 1
 }

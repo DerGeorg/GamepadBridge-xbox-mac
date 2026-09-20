@@ -55,7 +55,7 @@
 extern "C" void gpb_menubar_run(void);
 extern "C" void gpb_menubar_stop(void);
 extern "C" int gpb_confirm_firmware(const char *message);
-extern "C" int gpb_permission_alert(const char *message, const char *url);
+
 #endif
 
 namespace
@@ -92,29 +92,16 @@ namespace
             return true;
         }
 
-        const char *message =
-            "GamepadBridge needs Input Monitoring to publish the virtual "
-            "gamepad that games and System Settings see. Without it the "
-            "controller connects but nothing receives its input.\n\n"
-            "Switch GamepadBridge on under Privacy & Security > Input "
-            "Monitoring. macOS will then offer to restart the app.\n\n"
-            "If it is not in that list, add it with + and pick "
-            "GamepadBridge in your Applications folder.";
-
         Log::error("Input Monitoring is not granted.");
 
         Status::setConnection("Needs Input Monitoring", false);
 
 #ifdef GAMEPADBRIDGE_MENUBAR
-        if (!gpb_permission_alert(message, Permissions::settingsURL()))
-        {
-            return false;
-        }
-
-        Log::info("Waiting for the permission - macOS will offer to restart "
-                  "GamepadBridge once you grant it.");
+        // The menu bar shows a window that stays up and watches for the
+        // permission itself; it cannot appear before the event loop runs.
+        gpb_set_needs_permission(1);
 #else
-        Log::error("%s", message);
+        Log::error("%s", gpb_permission_message());
         Log::error("Grant it to whichever app launches this binary, not to "
                    "the binary itself.");
 #endif
