@@ -37,6 +37,10 @@ private final class MenuBar: NSObject {
     private let connection = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let battery = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
+    private let updates = NSMenuItem(title: "Check for Updates…",
+                                     action: #selector(checkForUpdates),
+                                     keyEquivalent: "")
+
     private var timer: Timer?
 
     override init() {
@@ -56,6 +60,11 @@ private final class MenuBar: NSObject {
                               keyEquivalent: "")
         pair.target = self
         menu.addItem(pair)
+
+        menu.addItem(.separator())
+
+        updates.target = self
+        menu.addItem(updates)
 
         menu.addItem(.separator())
 
@@ -100,6 +109,68 @@ private final class MenuBar: NSObject {
 
     @objc private func quit() {
         gpb_request_quit()
+    }
+
+    // MARK: - Updates
+
+    @objc private func checkForUpdates() {
+        updates.title = "Checking…"
+        updates.isEnabled = false
+
+        let task = URLSession.shared.dataTask(with: releasesAPI) {
+            [weak self] data, _, error in
+
+            DispatchQueue.main.async {
+                self?.updates.title = "Check for Updates…"
+                self?.updates.isEnabled = true
+
+                self?.report(data: data, error: error)
+            }
+        }
+
+        task.resume()
+    }
+
+    private func report(data: Data?, error: Error?) {
+        let alert = NSAlert()
+        let current = currentVersion()
+
+        if let error = error {
+            alert.alertStyle = .warning
+            alert.messageText = "Could not check for updates"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "OK")
+        }
+
+        else if let data = data, let latest = latestVersion(from: data) {
+            if isNewer(latest, than: current) {
+                alert.messageText = "GamepadBridge \(latest) is available"
+                alert.informativeText = "You are running \(current)."
+                alert.addButton(withTitle: "Open Release Page")
+                alert.addButton(withTitle: "Later")
+            }
+
+            else {
+                alert.messageText = "GamepadBridge is up to date"
+                alert.informativeText = "You are running \(current)."
+                alert.addButton(withTitle: "OK")
+            }
+        }
+
+        else {
+            alert.alertStyle = .warning
+            alert.messageText = "Could not read the release list"
+            alert.informativeText = "The server answered, but not with "
+                + "anything this version understands."
+            alert.addButton(withTitle: "OK")
+        }
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+
+        if alert.runModal() == .alertFirstButtonReturn,
+           alert.buttons.first?.title == "Open Release Page" {
+            NSWorkspace.shared.open(releasesPage)
+        }
     }
 }
 

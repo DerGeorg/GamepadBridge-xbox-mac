@@ -35,8 +35,12 @@ it. Read [the cask](https://gitlab.dergeorg.at/mac/homebrew-tap/-/blob/main/Cask
 first — it is 50 lines.
 
 It runs as a **menu bar item**, not a window: the icon shows whether a
-controller is connected, and the menu has the battery level, a pairing button
-and Quit.
+controller is connected, and the menu has the battery level, a pairing button,
+an update check and Quit.
+
+The update check runs only when you click it. Homebrew installs update
+themselves through the cask's `livecheck`; this is for anyone who took the
+disk image, who would otherwise never hear about a new version.
 
 On first launch it offers to download the adapter's firmware from Microsoft
 (about 200 KB). That file is Microsoft's and cannot be bundled with the app;
