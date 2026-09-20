@@ -14,6 +14,10 @@
 
 import AppKit
 
+#if GAMEPADBRIDGE_SPARKLE
+import Sparkle
+#endif
+
 private func connectionText() -> String {
     var buffer = [CChar](repeating: 0, count: 256)
 
@@ -37,8 +41,21 @@ private final class MenuBar: NSObject {
     private let connection = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let battery = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
+    /*
+     * Sparkle downloads and installs updates itself, and asks on first launch
+     * whether it may check automatically. Without it the menu item falls back
+     * to the built-in check, which can only tell you a new version exists and
+     * open the release page — still better than a build that never mentions
+     * updates at all.
+     */
+#if GAMEPADBRIDGE_SPARKLE
+    private let updater = SPUStandardUpdaterController(startingUpdater: true,
+                                                       updaterDelegate: nil,
+                                                       userDriverDelegate: nil)
+#endif
+
     private let updates = NSMenuItem(title: "Check for Updates…",
-                                     action: #selector(checkForUpdates),
+                                     action: nil,
                                      keyEquivalent: "")
 
     private var timer: Timer?
@@ -63,7 +80,15 @@ private final class MenuBar: NSObject {
 
         menu.addItem(.separator())
 
+#if GAMEPADBRIDGE_SPARKLE
+        updates.target = updater
+        updates.action = #selector(
+            SPUStandardUpdaterController.checkForUpdates(_:))
+#else
         updates.target = self
+        updates.action = #selector(checkForUpdates)
+#endif
+
         menu.addItem(updates)
 
         menu.addItem(.separator())
@@ -111,8 +136,9 @@ private final class MenuBar: NSObject {
         gpb_request_quit()
     }
 
-    // MARK: - Updates
+    // MARK: - Updates (only without Sparkle)
 
+#if !GAMEPADBRIDGE_SPARKLE
     @objc private func checkForUpdates() {
         updates.title = "Checking…"
         updates.isEnabled = false
@@ -172,6 +198,7 @@ private final class MenuBar: NSObject {
             NSWorkspace.shared.open(releasesPage)
         }
     }
+#endif
 }
 
 nonisolated(unsafe) private var menuBar: MenuBar?

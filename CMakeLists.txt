@@ -26,6 +26,19 @@ set(XOW_BACKEND "console" CACHE STRING
 # backend; any other backend silently does without it.
 option(XOW_MENUBAR "Build the menu bar UI (corehid backend only)" ON)
 
+# In-app updates. Off by default because it needs third_party/sparkle, which
+# scripts/get-sparkle.sh fetches; the release build turns it on. Without it
+# the menu bar falls back to its own check, which only points at the release
+# page instead of installing anything.
+option(XOW_SPARKLE "In-app updates via Sparkle (run scripts/get-sparkle.sh first)" OFF)
+
+set(XOW_SPARKLE_PUBLIC_KEY "" CACHE STRING
+    "Sparkle EdDSA public key, from third_party/sparkle/bin/generate_keys")
+
+set(XOW_APPCAST_URL
+    "https://gitlab.dergeorg.at/mac/gamepadbridge/-/raw/main/appcast.xml"
+    CACHE STRING "Sparkle appcast feed URL")
+
 # Marketing version for the bundle. XOW_VERSION is a git describe and is not
 # a valid CFBundleShortVersionString.
 set(XOW_RELEASE_VERSION "1.0.1" CACHE STRING "Release version for the bundle")
@@ -141,6 +154,26 @@ elseif(XOW_BACKEND STREQUAL "corehid")
         find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
         list(APPEND BACKEND_FRAMEWORKS ${APPKIT_FRAMEWORK})
         set(XOW_MENUBAR_ACTIVE ON)
+
+        if(XOW_SPARKLE)
+            set(SPARKLE_DIR "${CMAKE_SOURCE_DIR}/third_party/sparkle")
+
+            if(NOT EXISTS "${SPARKLE_DIR}/Sparkle.framework")
+                message(FATAL_ERROR
+                    "XOW_SPARKLE is on but ${SPARKLE_DIR}/Sparkle.framework "
+                    "is missing - run scripts/get-sparkle.sh")
+            endif()
+
+            if(NOT XOW_SPARKLE_PUBLIC_KEY)
+                message(FATAL_ERROR
+                    "XOW_SPARKLE needs XOW_SPARKLE_PUBLIC_KEY. Run "
+                    "${SPARKLE_DIR}/bin/generate_keys once and pass the "
+                    "public key it prints.")
+            endif()
+
+            list(APPEND BACKEND_FRAMEWORKS "${SPARKLE_DIR}/Sparkle.framework")
+            set(XOW_SPARKLE_ACTIVE ON)
+        endif()
     endif()
     message(STATUS "CoreHID backend selected — virtual gamepad via "
                    "HIDVirtualDevice (needs the hid.virtual.device "
@@ -191,6 +224,36 @@ target_compile_options(gamepadbridge PRIVATE
 if(XOW_BACKEND STREQUAL "corehid")
     set_target_properties(gamepadbridge PROPERTIES
         XCODE_ATTRIBUTE_SWIFT_VERSION "5.0")
+endif()
+
+if(XOW_SPARKLE_ACTIVE)
+    set_target_properties(gamepadbridge PROPERTIES
+        XCODE_ATTRIBUTE_FRAMEWORK_SEARCH_PATHS "${SPARKLE_DIR}"
+        XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS
+            "@executable_path/../Frameworks"
+        XCODE_ATTRIBUTE_SWIFT_ACTIVE_COMPILATION_CONDITIONS
+            "GAMEPADBRIDGE_SPARKLE")
+
+    # ditto rather than CMake's own copy: the framework's Versions/Current
+    # symlinks have to survive or the bundle cannot be signed.
+    add_custom_command(TARGET gamepadbridge POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_BUNDLE_CONTENT_DIR:gamepadbridge>/Frameworks"
+        COMMAND ditto "${SPARKLE_DIR}/Sparkle.framework"
+            "$<TARGET_BUNDLE_CONTENT_DIR:gamepadbridge>/Frameworks/Sparkle.framework"
+        COMMENT "Embedding Sparkle.framework")
+
+    set(XOW_SPARKLE_PLIST
+"\t<key>SUFeedURL</key>
+\t<string>${XOW_APPCAST_URL}</string>
+\t<key>SUPublicEDKey</key>
+\t<string>${XOW_SPARKLE_PUBLIC_KEY}</string>
+\t<key>SUEnableAutomaticChecks</key>
+\t<true/>
+\t<key>SUScheduledCheckInterval</key>
+\t<integer>86400</integer>")
+else()
+    set(XOW_SPARKLE_PLIST "")
 endif()
 
 if(XOW_MENUBAR_ACTIVE)

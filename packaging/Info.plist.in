@@ -24,6 +24,7 @@
 	<string>${MACOSX_BUNDLE_COPYRIGHT}</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
+${XOW_SPARKLE_PLIST}
 	<!-- Menu bar only: no Dock tile, no main window. -->
 	<key>LSUIElement</key>
 	<true/>

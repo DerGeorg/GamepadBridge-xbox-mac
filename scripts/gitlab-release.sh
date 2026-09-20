@@ -35,6 +35,13 @@ fi
 DMG="$ROOT/dist/GamepadBridge-$VERSION.dmg"
 [ -f "$DMG" ] || die "not found: $DMG (run scripts/release.sh first)"
 
+# Publishing without the matching appcast entry means no running copy ever
+# learns about this version, and nothing anywhere reports a problem. Check
+# rather than trust that the step was not forgotten.
+grep -q "<sparkle:shortVersionString>$VERSION<" "$ROOT/appcast.xml" 2>/dev/null \
+    || die "appcast.xml has no entry for $VERSION - run scripts/release.sh, \
+then commit and push the appcast before publishing"
+
 API="$HOST/api/v4/projects/$PROJECT"
 TAG="v$VERSION"
 

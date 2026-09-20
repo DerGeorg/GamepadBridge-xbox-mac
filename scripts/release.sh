@@ -40,6 +40,12 @@ SKIP_BUILD=0
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="$ROOT/build-release"
 DIST="$ROOT/dist"
+SPARKLE="$ROOT/third_party/sparkle"
+SPARKLE_KEY_FILE="$ROOT/packaging/sparkle_public_key.txt"
+
+# Must match what scripts/gitlab-release.sh uploads to, or the appcast points
+# at a file that is not there and updates fail for everyone at once.
+DOWNLOAD_BASE="https://gitlab.dergeorg.at/api/v4/projects/mac%2Fgamepadbridge/packages/generic/gamepadbridge"
 
 die() { printf '\nERROR: %s\n' "$1" >&2; exit 1; }
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
@@ -106,6 +112,16 @@ hid.virtual.device entitlement found in:
 Download it from developer.apple.com and double-click it to install."
 
 PROFILE_NAME="$found"
+[ -d "$SPARKLE/Sparkle.framework" ] \
+    || die "Sparkle is missing - run scripts/get-sparkle.sh"
+
+[ -f "$SPARKLE_KEY_FILE" ] || die "no Sparkle public key at
+  $SPARKLE_KEY_FILE
+Run $SPARKLE/bin/generate_keys once. It puts the private key in your
+keychain and prints the public one; save that line to the file above."
+
+SPARKLE_PUBLIC_KEY="$(tr -d '[:space:]' < "$SPARKLE_KEY_FILE")"
+
 echo "certificate: $IDENTITY ($TEAM_ID)"
 echo "profile:     $PROFILE_NAME"
 echo "version:     $VERSION"
@@ -133,6 +149,8 @@ cmake -G Xcode \
     -DXOW_CODESIGN_IDENTITY="$IDENTITY" \
     -DXOW_PROVISIONING_PROFILE="$PROFILE_NAME" \
     -DXOW_STATIC_LIBUSB=ON \
+    -DXOW_SPARKLE=ON \
+    -DXOW_SPARKLE_PUBLIC_KEY="$SPARKLE_PUBLIC_KEY" \
     -S "$ROOT" -B "$BUILD" > /dev/null
 
 xcodebuild -project "$BUILD/gamepadbridge.xcodeproj" \
@@ -143,6 +161,39 @@ xcodebuild -project "$BUILD/gamepadbridge.xcodeproj" \
 [ -d "$APP" ] || die "expected $APP"
 
 fi
+
+# ---------------------------------------------------------------------------
+step "Signing the embedded framework"
+# ---------------------------------------------------------------------------
+SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework"
+CURRENT="$SPARKLE_FW/Versions/Current"
+
+[ -d "$SPARKLE_FW" ] || die "Sparkle.framework was not embedded in the bundle"
+
+# Sparkle ships ad-hoc signed, with no team identifier, so every part of it
+# has to be signed again with our own identity. Inside out: a bundle's
+# signature covers what it contains, so anything nested must be signed first
+# or signing the container invalidates it immediately.
+for nested in \
+    "$CURRENT/XPCServices/Downloader.xpc" \
+    "$CURRENT/XPCServices/Installer.xpc" \
+    "$CURRENT/Updater.app" \
+    "$CURRENT/Autoupdate"
+do
+    [ -e "$nested" ] || continue
+
+    codesign --force --options runtime --timestamp \
+        --sign "$IDENTITY" "$nested" 2>&1 | sed 's/^/  /'
+done
+
+codesign --force --options runtime --timestamp \
+    --sign "$IDENTITY" "$SPARKLE_FW" 2>&1 | sed 's/^/  /'
+
+# Embedding the framework happened after Xcode signed the app, so that
+# signature no longer covers the bundle's contents. Sign it again.
+codesign --force --options runtime --timestamp \
+    --entitlements "$ROOT/packaging/gamepadbridge.entitlements" \
+    --sign "$IDENTITY" "$APP" 2>&1 | sed 's/^/  /'
 
 # ---------------------------------------------------------------------------
 step "Verifying the signature"
@@ -232,6 +283,20 @@ if [ "$SKIP_NOTARIZE" -eq 0 ]; then
 
     xcrun stapler staple "$DMG"
 
+    step "Signing the update for Sparkle"
+
+    SIGNED="$("$SPARKLE/bin/sign_update" "$DMG")"
+
+    ED_SIGNATURE="$(sed -n 's/.*edSignature="\([^"]*\)".*/\1/p' <<< "$SIGNED")"
+    LENGTH="$(sed -n 's/.*length="\([^"]*\)".*/\1/p' <<< "$SIGNED")"
+
+    [ -n "$ED_SIGNATURE" ] || die "sign_update produced no signature - is the \
+private key still in your keychain?"
+
+    python3 "$ROOT/scripts/make-appcast.py" "$ROOT/appcast.xml" "$VERSION" \
+        "$DOWNLOAD_BASE/$VERSION/GamepadBridge.dmg" "$LENGTH" \
+        "$ED_SIGNATURE" 2>&1 | sed 's/^/  /'
+
     step "Verifying as Gatekeeper sees it"
 
     assessment="$(spctl -a -t open --context context:primary-signature -v \
@@ -253,6 +318,10 @@ SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 echo "  $DMG"
 echo "  sha256: $SHA"
 echo
-echo "Update the Homebrew cask with:"
-echo "  version \"$VERSION\""
-echo "  sha256 \"$SHA\""
+echo "Next:"
+echo "  1. commit and push appcast.xml - without it no running copy sees"
+echo "     this version, and nothing will say so"
+echo "  2. scripts/gitlab-release.sh $VERSION"
+echo "  3. update the cask in the tap:"
+echo "       version \"$VERSION\""
+echo "       sha256 \"$SHA\""
