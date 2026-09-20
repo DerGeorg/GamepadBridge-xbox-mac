@@ -11,10 +11,14 @@
 # gets shipped.
 cask "gamepadbridge" do
   version "1.0.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "7e588084795c9a08ecda2a0f464c741b340ade4870d73bd8ebbb26f0de5a91f6"
 
-  url "https://gitlab.dergeorg.at/mac/gamepadbridge/-/releases/v#{version}/downloads/GamepadBridge.dmg",
-      verified: "gitlab.dergeorg.at/mac/gamepadbridge"
+  # The package registry, not the /-/releases/.../downloads/ permalink: GitLab
+  # treats an absolute asset URL as external and answers that permalink with a
+  # "you are being redirected away from GitLab" interstitial, so a download
+  # yields 571 bytes of HTML instead of a disk image.
+  url "https://gitlab.dergeorg.at/api/v4/projects/mac%2Fgamepadbridge/" \
+      "packages/generic/gamepadbridge/#{version}/GamepadBridge.dmg"
   name "GamepadBridge"
   desc "Use Xbox wireless controllers through the Xbox Wireless Adapter"
   homepage "https://gitlab.dergeorg.at/mac/gamepadbridge"

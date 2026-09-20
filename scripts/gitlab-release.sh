@@ -73,6 +73,8 @@ JSON
 
 step "Done"
 echo "  $HOST/mac/gamepadbridge/-/releases/$TAG"
-echo "  download: $HOST/mac/gamepadbridge/-/releases/$TAG/downloads/GamepadBridge.dmg"
+# Not the /downloads/ permalink: GitLab answers that with an interstitial
+# warning page for absolute asset URLs, so anything scripted gets HTML.
+echo "  download: $PACKAGE_URL"
 echo
 echo "  sha256: $(shasum -a 256 "$DMG" | cut -d' ' -f1)"

@@ -14,6 +14,38 @@ The lucky part: xow is pure **userspace + libusb**. So the hard part (USB, MT76
 firmware, 802.11 link, GIP protocol) ports almost 1:1 — only the output had to
 be rewritten.
 
+## Install
+
+Download [the latest release](https://gitlab.dergeorg.at/mac/gamepadbridge/-/releases),
+drag **GamepadBridge.app** to Applications, and launch it. The app is signed
+and notarized, so Gatekeeper lets it open without any detour through
+System Settings.
+
+Or with Homebrew:
+
+```sh
+brew tap dergeorg/tap https://gitlab.dergeorg.at/mac/homebrew-tap.git
+brew install --cask gamepadbridge
+```
+
+It runs as a **menu bar item**, not a window: the icon shows whether a
+controller is connected, and the menu has the battery level, a pairing button
+and Quit.
+
+On first launch it offers to download the adapter's firmware from Microsoft
+(about 200 KB). That file is Microsoft's and cannot be bundled with the app;
+it is verified against a known checksum and stored in
+`~/Library/Application Support/GamepadBridge/`.
+
+One permission is needed, and it is easy to grant to the wrong thing: macOS
+attributes device access to whichever app *starts* the driver. Launch
+GamepadBridge.app itself and allow **GamepadBridge** under System Settings ›
+Privacy & Security › Input Monitoring. If you start the binary from a
+terminal instead, the permission belongs to that terminal — see the Stage 2
+notes below.
+
+Requires macOS 15 or newer (CoreHID) and an Apple Silicon or Intel Mac.
+
 ## Two stages
 
 | Stage | What | Status |
