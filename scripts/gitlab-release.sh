@@ -39,6 +39,10 @@ TAG="v$VERSION"
 
 # The generic package registry gives the file a stable URL that does not
 # change when the release is edited, which is what the Homebrew cask needs.
+#
+# The link is typed "other" rather than "package": GitLab files a "package"
+# link away under its own heading in the release page, where nobody looking
+# for a download thinks to look.
 step "Uploading $(basename "$DMG")"
 
 PACKAGE_URL="$API/packages/generic/gamepadbridge/$VERSION/GamepadBridge.dmg"
@@ -61,10 +65,10 @@ curl --fail --silent --show-error --request POST \
   "assets": {
     "links": [
       {
-        "name": "GamepadBridge.dmg",
+        "name": "GamepadBridge.dmg (macOS 15+, signed & notarized)",
         "url": "$PACKAGE_URL",
         "direct_asset_path": "/GamepadBridge.dmg",
-        "link_type": "package"
+        "link_type": "other"
       }
     ]
   }
