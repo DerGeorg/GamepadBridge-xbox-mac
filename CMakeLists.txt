@@ -41,7 +41,7 @@ set(XOW_APPCAST_URL
 
 # Marketing version for the bundle. XOW_VERSION is a git describe and is not
 # a valid CFBundleShortVersionString.
-set(XOW_RELEASE_VERSION "1.0.4" CACHE STRING "Release version for the bundle")
+set(XOW_RELEASE_VERSION "1.0.5" CACHE STRING "Release version for the bundle")
 
 # Default firmware location. Override at runtime with the XOW_FIRMWARE env var.
 set(XOW_FIRMWARE_PATH "/usr/local/share/gamepadbridge/xow_dongle.bin"
@@ -153,7 +153,8 @@ elseif(XOW_BACKEND STREQUAL "corehid")
     if(XOW_MENUBAR)
         list(APPEND CORE_SOURCES src/menubar.swift src/update_check.swift src/permission_panel.swift)
         find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
-        list(APPEND BACKEND_FRAMEWORKS ${APPKIT_FRAMEWORK})
+        find_library(APPSERVICES_FRAMEWORK ApplicationServices REQUIRED)
+        list(APPEND BACKEND_FRAMEWORKS ${APPKIT_FRAMEWORK} ${APPSERVICES_FRAMEWORK})
         set(XOW_MENUBAR_ACTIVE ON)
 
         if(XOW_SPARKLE)

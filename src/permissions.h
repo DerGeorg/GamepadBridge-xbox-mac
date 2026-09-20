@@ -2,16 +2,22 @@
  * Copyright (C) 2026 GamepadBridge contributors
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Input Monitoring, which macOS requires before a virtual HID device can be
- * published.
+ * The two permissions macOS requires before a virtual HID device can be
+ * published, neither of which it will tell you about:
  *
- * Without it CoreHID simply returns nil. No prompt, no error, nothing in the
- * log — the app looks like it started fine and the controller does nothing.
- * So the permission is checked up front and asked for explicitly, rather than
- * being discovered as a failure several steps later.
+ *   Input Monitoring (kTCCServiceListenEvent)   - IOHIDCheckAccess
+ *   Accessibility    (kTCCServiceAccessibility) - AXIsProcessTrusted
+ *
+ * Without them CoreHID returns nil. No prompt, no error, nothing in the log.
+ * The app looks like it started fine and the controller does nothing.
+ *
+ * Accessibility is the one nobody finds: macOS announces it as "Gerätesteuerung
+ * und Datenzugriff" in German, which matches nothing in the settings list.
  */
 
 #pragma once
+
+#include "status_c.h"
 
 namespace Permissions
 {
@@ -23,13 +29,14 @@ namespace Permissions
     };
 
     Access inputMonitoring();
+    bool accessibility();
 
-    // Shows the system prompt when the answer is still Unknown. Returns the
-    // state afterwards; granting usually only takes effect after a restart,
-    // which macOS offers to do itself.
-    Access requestInputMonitoring();
+    bool allGranted();
 
-    // Deep link to the exact System Settings pane, so nobody has to hunt for
-    // it among a dozen similarly named lists.
-    const char *settingsURL();
+    // Both show the system prompt where macOS still offers one, and register
+    // the app so it appears in the relevant list at all.
+    void request();
+
+    const char *inputMonitoringURL();
+    const char *accessibilityURL();
 }

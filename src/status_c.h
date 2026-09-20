@@ -35,7 +35,8 @@ int  gpb_needs_permission(void);
 // One wording, used by both the window and the terminal build, so the two
 // cannot drift into saying different things.
 const char *gpb_permission_message(void);
-const char *gpb_permission_settings_url(void);
+const char *gpb_permission_input_url(void);
+const char *gpb_permission_accessibility_url(void);
 
 #ifdef __cplusplus
 }

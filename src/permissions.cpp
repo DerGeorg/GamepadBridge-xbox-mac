@@ -6,8 +6,11 @@
 #include "permissions.h"
 #include "status_c.h"
 
+#include <ApplicationServices/ApplicationServices.h>
 #include <IOKit/hid/IOHIDManager.h>
 #include <IOKit/hidsystem/IOHIDLib.h>
+
+#include <string>
 
 namespace
 {
@@ -20,6 +23,8 @@ namespace
             default:                      return Permissions::Access::Unknown;
         }
     }
+
+    std::string message;
 }
 
 Permissions::Access Permissions::inputMonitoring()
@@ -27,23 +32,25 @@ Permissions::Access Permissions::inputMonitoring()
     return translate(IOHIDCheckAccess(kIOHIDRequestTypeListenEvent));
 }
 
-Permissions::Access Permissions::requestInputMonitoring()
+bool Permissions::accessibility()
 {
-    // Only prompts while the answer is Unknown; once denied, macOS will not
-    // ask again and the user has to change it in System Settings.
+    return AXIsProcessTrusted();
+}
+
+bool Permissions::allGranted()
+{
+    return inputMonitoring() == Access::Granted && accessibility();
+}
+
+void Permissions::request()
+{
     IOHIDRequestAccess(kIOHIDRequestTypeListenEvent);
 
     /*
-     * Opening a HID manager as well, because IOHIDRequestAccess on its own
-     * does not reliably put the app into the Input Monitoring list — and an
-     * app that is not listed cannot be switched on. The user would have to
-     * find the binary through the + button, which is not something to ask of
-     * anyone.
-     *
-     * IOHIDLib.h is explicit that this is the other path to the same request:
-     * "the request will be made on the process's behalf in
-     * IOHIDManagerOpen/IOHIDDeviceOpen calls". It is expected to fail while
-     * access is missing; registering the app is the point.
+     * Scheduling on a run loop and then turning it is the part that matters.
+     * IOHIDManagerOpen on its own touches no device; the devices are opened as
+     * the run loop runs, and it is that attempt which raises the request. An
+     * earlier version skipped this and registered nothing at all.
      */
     IOHIDManagerRef manager =
         IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
@@ -51,17 +58,8 @@ Permissions::Access Permissions::requestInputMonitoring()
     if (manager)
     {
         IOHIDManagerSetDeviceMatching(manager, nullptr);
-
-        /*
-         * Scheduling on a run loop and then turning it is the part that
-         * matters. IOHIDManagerOpen on its own returns without touching a
-         * device; the devices are only opened as the run loop runs, and it is
-         * that attempt which raises the request. An earlier version skipped
-         * this and registered nothing at all.
-         */
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(),
                                         kCFRunLoopDefaultMode);
-
         IOHIDManagerOpen(manager, kIOHIDOptionsTypeNone);
 
         CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.5, false);
@@ -69,32 +67,83 @@ Permissions::Access Permissions::requestInputMonitoring()
         IOHIDManagerClose(manager, kIOHIDOptionsTypeNone);
         IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetCurrent(),
                                           kCFRunLoopDefaultMode);
-
         CFRelease(manager);
     }
 
-    return inputMonitoring();
+    // Prompting here is what puts the app into the Accessibility list; macOS
+    // shows its own dialog offering to open the settings.
+    if (!accessibility())
+    {
+        const void *keys[] = { kAXTrustedCheckOptionPrompt };
+        const void *values[] = { kCFBooleanTrue };
+
+        CFDictionaryRef options = CFDictionaryCreate(
+            kCFAllocatorDefault, keys, values, 1,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+
+        AXIsProcessTrustedWithOptions(options);
+
+        CFRelease(options);
+    }
 }
 
-const char *Permissions::settingsURL()
+const char *Permissions::inputMonitoringURL()
 {
     return "x-apple.systempreferences:com.apple.preference.security"
            "?Privacy_ListenEvent";
 }
 
-const char *gpb_permission_message(void)
+const char *Permissions::accessibilityURL()
 {
-    return "GamepadBridge needs Input Monitoring to publish the virtual "
-           "gamepad that games and System Settings see. Without it the "
-           "controller connects but nothing receives its input.\n\n"
-           "1. Open System Settings below\n"
-           "2. Switch GamepadBridge on under Input Monitoring\n\n"
-           "Not in the list? Use \"Show Me the App\", then drag "
-           "GamepadBridge from the Finder window onto the list.\n\n"
-           "This window stays open and notices by itself once you are done.";
+    return "x-apple.systempreferences:com.apple.preference.security"
+           "?Privacy_Accessibility";
 }
 
-const char *gpb_permission_settings_url(void)
+// ---------------------------------------------------------------------------
+// C ABI
+// ---------------------------------------------------------------------------
+
+int gpb_permission_granted(void)
 {
-    return Permissions::settingsURL();
+    return Permissions::allGranted() ? 1 : 0;
+}
+
+/*
+ * Rebuilt on each call so the window can show what is still outstanding
+ * rather than a fixed list the user has to check off themselves.
+ */
+const char *gpb_permission_message(void)
+{
+    const bool input =
+        Permissions::inputMonitoring() == Permissions::Access::Granted;
+    const bool access = Permissions::accessibility();
+
+    message =
+        "GamepadBridge needs two permissions to publish the virtual gamepad "
+        "that games see. Without them the controller connects but nothing "
+        "receives its input.\n\n";
+
+    message += input ? "✅  Input Monitoring\n"
+                     : "—  Input Monitoring — still needed\n";
+
+    message += access ? "✅  Accessibility\n"
+                      : "—  Accessibility — still needed\n";
+
+    message +=
+        "\nmacOS calls the second one \"Gerätesteuerung und Datenzugriff\" in "
+        "German, which matches nothing in the list — it is Accessibility.\n\n"
+        "Not listed? Use \"Show Me the App\" and drag GamepadBridge onto the "
+        "list. This window notices by itself once you are done.";
+
+    return message.c_str();
+}
+
+const char *gpb_permission_input_url(void)
+{
+    return Permissions::inputMonitoringURL();
+}
+
+const char *gpb_permission_accessibility_url(void)
+{
+    return Permissions::accessibilityURL();
 }

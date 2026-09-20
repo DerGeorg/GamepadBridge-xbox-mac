@@ -21,6 +21,7 @@
 
 #include "output.h"
 #include "status.h"
+#include "status_c.h"
 #include "utils/log.h"
 #include "../driverkit/shared/gamepad_report.h"
 #include "xbox_bt_profile.h"
@@ -347,8 +348,13 @@ public:
             // The startup check passes when Input Monitoring is granted, but
             // a refusal here means something else is still in the way. Put it
             // in the menu rather than only in a log nobody is watching.
-            Status::setConnection("Virtual gamepad refused - check "
-                                  "Privacy & Security", false);
+            Status::setConnection("Virtual gamepad refused - permissions "
+                                  "missing", false);
+
+            // Back into asking. A refusal here means something is still
+            // withheld, and the window explains which — far better than a
+            // status line the user has to interpret.
+            gpb_set_needs_permission(1);
 
             return;
         }

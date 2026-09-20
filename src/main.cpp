@@ -71,38 +71,35 @@ namespace
      * Reopen" once the switch is flipped — and only for an app that is
      * actually running.
      */
-    bool ensureInputMonitoring()
+    bool ensurePermissions()
     {
-        using Permissions::Access;
-
-        Access access = Permissions::inputMonitoring();
-
-        if (access != Access::Granted)
-        {
-            // Also when already denied: asking again is what puts the app
-            // into the Input Monitoring list, and one that is not listed
-            // cannot be switched on at all.
-            Log::info("Asking for Input Monitoring permission...");
-
-            access = Permissions::requestInputMonitoring();
-        }
-
-        if (access == Access::Granted)
+        if (Permissions::allGranted())
         {
             return true;
         }
 
-        Log::error("Input Monitoring is not granted.");
+        // Also when already denied: asking again is what puts the app into
+        // the lists, and one that is not listed cannot be switched on at all.
+        Log::info("Asking for the permissions macOS requires...");
 
-        Status::setConnection("Needs Input Monitoring", false);
+        Permissions::request();
+
+        if (Permissions::allGranted())
+        {
+            return true;
+        }
+
+        Log::error("Input Monitoring and Accessibility are not both granted.");
+
+        Status::setConnection("Needs permissions", false);
 
 #ifdef GAMEPADBRIDGE_MENUBAR
-        // The menu bar shows a window that stays up and watches for the
-        // permission itself; it cannot appear before the event loop runs.
+        // The menu bar shows a window that stays up and watches for them
+        // itself; it cannot appear before the event loop runs.
         gpb_set_needs_permission(1);
 #else
         Log::error("%s", gpb_permission_message());
-        Log::error("Grant it to whichever app launches this binary, not to "
+        Log::error("Grant them to whichever app launches this binary, not to "
                    "the binary itself.");
 #endif
 
@@ -400,9 +397,9 @@ int main()
         return runSelfTest(mask);
     }
 
-    // Permission first: granting it means restarting, and finding that out
-    // after a firmware download and a pairing dance is worse.
-    if (!ensureInputMonitoring())
+    // Permissions first: granting them means restarting, and finding that
+    // out after a firmware download and a pairing dance is worse.
+    if (!ensurePermissions())
     {
         Log::info("Shutting down...");
 

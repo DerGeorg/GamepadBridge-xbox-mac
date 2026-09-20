@@ -85,12 +85,6 @@ namespace
     std::atomic<bool> needsPermission{false};
 }
 
-int gpb_permission_granted(void)
-{
-    return Permissions::inputMonitoring() == Permissions::Access::Granted
-        ? 1 : 0;
-}
-
 void gpb_set_needs_permission(int needed)
 {
     needsPermission = needed != 0;

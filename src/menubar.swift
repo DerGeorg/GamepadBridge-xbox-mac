@@ -65,6 +65,8 @@ private final class MenuBar: NSObject {
         action: nil,
         keyEquivalent: "")
 
+    private let permissions = PermissionPanel()
+
     private var timer: Timer?
 
     override init() {
@@ -136,6 +138,12 @@ private final class MenuBar: NSObject {
         image?.isTemplate = true
 
         item.button?.image = image
+
+        // Whenever something is refused for want of a permission - at startup
+        // or hours later when a controller connects - the window comes back.
+        if gpb_needs_permission() != 0, !permissions.isVisible {
+            permissions.show()
+        }
     }
 
     @objc private func startPairing() {
@@ -212,7 +220,6 @@ private final class MenuBar: NSObject {
 }
 
 nonisolated(unsafe) private var menuBar: MenuBar?
-nonisolated(unsafe) private var permissionPanel: PermissionPanel?
 
 // MARK: - C ABI consumed by src/main.cpp
 
@@ -224,16 +231,6 @@ public func gpb_menubar_run() {
     app.setActivationPolicy(.accessory)
 
     menuBar = MenuBar()
-
-    if gpb_needs_permission() != 0 {
-        let url = gpb_permission_settings_url().map { String(cString: $0) } ?? ""
-        let text = gpb_permission_message().map { String(cString: $0) } ?? ""
-
-        let panel = PermissionPanel(settingsURL: url)
-        panel.show(message: text)
-
-        permissionPanel = panel
-    }
 
     app.run()
 }
