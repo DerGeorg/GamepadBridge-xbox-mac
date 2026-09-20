@@ -1,5 +1,10 @@
 # GamepadBridge
 
+> Development happens on
+> [gitlab.dergeorg.at](https://gitlab.dergeorg.at/mac/gamepadbridge) — the
+> GitHub repository is a mirror. Issues and merge requests belong on GitLab;
+> releases appear in both places.
+
 Use Xbox wireless controllers (including **model 1537**) on a Mac **through the
 Xbox Wireless Adapter (USB dongle)**.
 
