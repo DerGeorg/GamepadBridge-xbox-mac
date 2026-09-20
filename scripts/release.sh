@@ -216,6 +216,13 @@ ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "GamepadBridge" -srcfolder "$STAGE" \
     -ov -format UDZO "$DMG" > /dev/null
 
+# Sign the image itself, not only the app inside it. Notarizing an unsigned
+# image still yields a valid stapled ticket, but Gatekeeper's assessment of
+# the image finds no signature to evaluate and rejects it with "no usable
+# signature" — while the app within is perfectly fine, which makes it a
+# confusing failure to read.
+codesign --sign "$IDENTITY" --timestamp "$DMG"
+
 if [ "$SKIP_NOTARIZE" -eq 0 ]; then
     step "Notarizing the disk image"
 
@@ -226,8 +233,16 @@ if [ "$SKIP_NOTARIZE" -eq 0 ]; then
     xcrun stapler staple "$DMG"
 
     step "Verifying as Gatekeeper sees it"
-    spctl -a -t open --context context:primary-signature -v "$DMG" 2>&1 \
-        | sed 's/^/  /'
+
+    assessment="$(spctl -a -t open --context context:primary-signature -v \
+        "$DMG" 2>&1 || true)"
+
+    sed 's/^/  /' <<< "$assessment"
+
+    # Report a rejection as a failure. Printing it and carrying on is how a
+    # disk image nobody can open gets published.
+    grep -q "source=Notarized Developer ID" <<< "$assessment" \
+        || die "Gatekeeper does not accept the disk image"
 fi
 
 # ---------------------------------------------------------------------------
