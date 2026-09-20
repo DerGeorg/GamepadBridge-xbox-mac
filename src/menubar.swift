@@ -58,6 +58,13 @@ private final class MenuBar: NSObject {
                                      action: nil,
                                      keyEquivalent: "")
 
+    // Which version is running is the first thing anyone is asked in a bug
+    // report, and the app has no window to put it in.
+    private let version = NSMenuItem(
+        title: "GamepadBridge \(currentVersion())",
+        action: nil,
+        keyEquivalent: "")
+
     private var timer: Timer?
 
     override init() {
@@ -79,6 +86,9 @@ private final class MenuBar: NSObject {
         menu.addItem(pair)
 
         menu.addItem(.separator())
+
+        version.isEnabled = false
+        menu.addItem(version)
 
 #if GAMEPADBRIDGE_SPARKLE
         updates.target = updater

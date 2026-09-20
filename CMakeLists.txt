@@ -41,7 +41,7 @@ set(XOW_APPCAST_URL
 
 # Marketing version for the bundle. XOW_VERSION is a git describe and is not
 # a valid CFBundleShortVersionString.
-set(XOW_RELEASE_VERSION "1.0.2" CACHE STRING "Release version for the bundle")
+set(XOW_RELEASE_VERSION "1.0.3" CACHE STRING "Release version for the bundle")
 
 # Default firmware location. Override at runtime with the XOW_FIRMWARE env var.
 set(XOW_FIRMWARE_PATH "/usr/local/share/gamepadbridge/xow_dongle.bin"

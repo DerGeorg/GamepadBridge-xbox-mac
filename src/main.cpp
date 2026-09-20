@@ -77,8 +77,11 @@ namespace
 
         Access access = Permissions::inputMonitoring();
 
-        if (access == Access::Unknown)
+        if (access != Access::Granted)
         {
+            // Also when already denied: asking again is what puts the app
+            // into the Input Monitoring list, and one that is not listed
+            // cannot be switched on at all.
             Log::info("Asking for Input Monitoring permission...");
 
             access = Permissions::requestInputMonitoring();
@@ -94,7 +97,9 @@ namespace
             "gamepad that games and System Settings see. Without it the "
             "controller connects but nothing receives its input.\n\n"
             "Switch GamepadBridge on under Privacy & Security > Input "
-            "Monitoring. macOS will then offer to restart the app.";
+            "Monitoring. macOS will then offer to restart the app.\n\n"
+            "If it is not in that list, add it with + and pick "
+            "GamepadBridge in your Applications folder.";
 
         Log::error("Input Monitoring is not granted.");
 
