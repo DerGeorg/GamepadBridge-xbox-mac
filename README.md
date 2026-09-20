@@ -48,12 +48,21 @@ On first launch it offers to download the adapter's firmware from Microsoft
 it is verified against a known checksum and stored in
 `~/Library/Application Support/GamepadBridge/`.
 
-One permission is needed, and it is easy to grant to the wrong thing: macOS
-attributes device access to whichever app *starts* the driver. Launch
-GamepadBridge.app itself and allow **GamepadBridge** under System Settings ›
-Privacy & Security › Input Monitoring. If you start the binary from a
-terminal instead, the permission belongs to that terminal — see the Stage 2
-notes below.
+**Two** permissions are needed, and the app asks for both on first launch:
+
+- **Input Monitoring**
+- **Accessibility** — macOS announces this one under a name that appears
+  nowhere in the settings list. In German it says *"Gerätesteuerung und
+  Datenzugriff"*, which is `kTCCServiceAccessibility`, listed as
+  Accessibility.
+
+Both are easy to grant to the wrong thing: macOS attributes them to whichever
+app *starts* the driver. Launch GamepadBridge.app itself, not its binary from
+a terminal — otherwise the permissions belong to the terminal.
+
+Without them the controller connects and nothing receives its input. The app
+says so in the menu bar and reopens its permission window rather than leaving
+you guessing.
 
 Requires macOS 15 or newer (CoreHID) and an Apple Silicon or Intel Mac.
 

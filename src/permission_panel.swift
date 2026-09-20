@@ -71,7 +71,26 @@ final class PermissionPanel: NSObject {
         // Above System Settings, so the steps stay readable while they are
         // being followed instead of disappearing behind it.
         panel.level = .floating
-        panel.center()
+
+        /*
+         * Low on the screen rather than centred. macOS puts its own
+         * permission prompts in the middle, and a floating window explaining
+         * what to do that covers the dialog you are meant to answer is worse
+         * than no window at all.
+         */
+        if let screen = NSScreen.main {
+            let visible = screen.visibleFrame
+            let size = panel.frame.size
+
+            panel.setFrameOrigin(NSPoint(
+                x: visible.midX - size.width / 2,
+                y: visible.minY + visible.height * 0.10))
+        }
+
+        else
+        {
+            panel.center()
+        }
 
         window = panel
 
