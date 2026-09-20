@@ -7,7 +7,9 @@
 **Use your Xbox wireless controller on a Mac.**<br>
 The one macOS refuses to talk to.
 
-[![Download](https://img.shields.io/badge/Download-GamepadBridge.dmg-3DBF6E?style=for-the-badge)](https://gitlab.dergeorg.at/mac/gamepadbridge/-/releases)
+[![Website](https://img.shields.io/badge/gamepadbridge.dergeorg.at-3DBF6E?style=for-the-badge)](https://gamepadbridge.dergeorg.at)
+&nbsp;
+[![Download](https://img.shields.io/badge/Download-GamepadBridge.dmg-111?style=for-the-badge)](https://gitlab.dergeorg.at/mac/gamepadbridge/-/releases)
 &nbsp;
 [![macOS](https://img.shields.io/badge/macOS-15%2B-111?style=for-the-badge&logo=apple&logoColor=white)](#requirements)
 &nbsp;
@@ -42,7 +44,8 @@ brew install --cask gamepadbridge
 ```
 
 Or [download the disk image](https://gitlab.dergeorg.at/mac/gamepadbridge/-/releases)
-and drag it to Applications.
+and drag it to Applications. There is a walkthrough with pictures at
+**[gamepadbridge.dergeorg.at](https://gamepadbridge.dergeorg.at)**.
 
 The `brew trust` step is not boilerplate — a cask is executable Ruby, so
 Homebrew refuses to load one from a third-party tap until you say you trust
