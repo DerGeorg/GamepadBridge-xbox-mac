@@ -2,6 +2,13 @@
 #
 # Mirrors a release to GitHub, disk image and all.
 #
+# NOTE: .github/workflows/mirror-release.yml now does this automatically when
+# the mirror pushes a v* tag, without a token and without this machine. Keep
+# this script for the cases the workflow cannot cover: backfilling a tag that
+# predates the workflow (the manual run in Actions handles that too), or
+# publishing when GitHub Actions is unavailable. Do not run both for the same
+# tag expecting different results — the workflow is the normal path.
+#
 # GitLab's push mirroring carries branches and tags but not releases, and a
 # repository whose Releases page is empty looks abandoned — which defeats the
 # point of being on GitHub at all. GitLab stays the source of truth; this only
@@ -15,7 +22,7 @@
 #
 set -euo pipefail
 
-REPO="${GITHUB_REPO:-DerGeorg/gamepadbridge}"
+REPO="${GITHUB_REPO:-DerGeorg/GamepadBridge-xbox-mac}"
 
 VERSION="${1:-}"
 NOTES_FILE="${2:-}"

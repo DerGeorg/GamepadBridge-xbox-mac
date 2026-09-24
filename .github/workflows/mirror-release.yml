@@ -1,0 +1,139 @@
+# =============================================================================
+# Mirror a release to GitHub, disk image and all.
+#
+# GitLab's push mirroring carries branches and tags but not releases: a release
+# is a GitLab database object, not a git ref, and the disk image lives in the
+# package registry rather than in git. So the tags arrive here and the Releases
+# page stays empty — which makes the repository look abandoned to exactly the
+# people who came looking for a macOS equivalent of xow.
+#
+# This workflow closes that gap. It runs on GitHub, needs no secret, and takes
+# everything from GitLab's public API:
+#
+#   push of a v* tag   the mirror pushes the tag, this picks it up
+#   manual run         for backfilling releases tagged before this file existed
+#
+# GitLab stays the source of truth. Nothing here writes back to it.
+#
+# Note on tag pushes: GitHub runs the workflow as it exists AT THE TAG. Tags
+# pushed before this file was committed therefore do not trigger it — use the
+# manual run for those.
+# =============================================================================
+name: Mirror release to GitHub
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the leading v, e.g. 1.0.6"
+        required: true
+        type: string
+
+# Only what is needed to publish a release. No packages, no actions, no pages.
+permissions:
+  contents: write
+
+concurrency:
+  # Two runs for the same tag would race on creating the release.
+  group: mirror-release-${{ github.event.inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITLAB_PROJECT: mac%2Fgamepadbridge
+      GITLAB_HOST: https://gitlab.dergeorg.at
+
+    steps:
+      - name: Work out the version
+        id: v
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          # A typo here would publish a release pointing at a download that
+          # does not exist, so check the shape before doing anything else.
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$VERSION' does not look like a version (x.y.z)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION, tag v$VERSION"
+
+      - name: Fetch the release notes from GitLab
+        run: |
+          set -euo pipefail
+          URL="$GITLAB_HOST/api/v4/projects/$GITLAB_PROJECT/releases/${{ steps.v.outputs.tag }}"
+
+          # --fail turns an HTTP error into a non-zero exit instead of a body
+          # that later gets published as if it were the changelog. jq rather
+          # than a here-doc'd script: a nested here-doc inside a YAML block
+          # scalar is exactly the kind of thing that breaks on a reindent.
+          if curl --fail --silent --show-error --location "$URL" -o release.json; then
+            jq -r '.description // ""' release.json > notes.md
+            echo "Got $(wc -c < notes.md) bytes of release notes."
+          else
+            echo "No GitLab release for this tag — publishing without notes."
+            : > notes.md
+          fi
+
+          if [ ! -s notes.md ]; then
+            printf 'See the GitLab release for what changed.\n' > notes.md
+          fi
+
+          # The canonical home, so nobody opens an issue where it is not seen.
+          printf '\n---\n\nBuilt and released on [GitLab](%s/mac/gamepadbridge), the source of truth for this project.\nWebsite: <https://gamepadbridge.dergeorg.at>\n' "$GITLAB_HOST" >> notes.md
+
+      - name: Download the disk image from the GitLab package registry
+        run: |
+          set -euo pipefail
+          URL="$GITLAB_HOST/api/v4/projects/$GITLAB_PROJECT/packages/generic/gamepadbridge/${{ steps.v.outputs.version }}/GamepadBridge.dmg"
+          curl --fail --silent --show-error --location "$URL" -o GamepadBridge.dmg
+
+          # GitLab answers some asset URLs with an HTML interstitial rather than
+          # the file — that is a documented trap in this project's cask. Without
+          # this check the release would carry a few hundred bytes of HTML named
+          # GamepadBridge.dmg, and the failure would only surface on a user's
+          # Mac.
+          SIZE=$(wc -c < GamepadBridge.dmg)
+          TYPE=$(file -b --mime-type GamepadBridge.dmg)
+          echo "$SIZE bytes, $TYPE"
+
+          if [ "$SIZE" -lt 500000 ]; then
+            echo "::error::Only $SIZE bytes — that is not the disk image."
+            head -c 400 GamepadBridge.dmg
+            exit 1
+          fi
+          if ! file GamepadBridge.dmg | grep -qiE 'disk image|zlib|bzip2|Apple'; then
+            echo "::error::Not a disk image but $TYPE"
+            exit 1
+          fi
+
+      - name: Publish the release
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.v.outputs.tag }}"
+
+          # Idempotent on purpose: a re-run after a failed upload should finish
+          # the job rather than refuse because the release now exists.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — updating it."
+            gh release edit "$TAG" \
+              --title "GamepadBridge ${{ steps.v.outputs.version }}" \
+              --notes-file notes.md
+            gh release upload "$TAG" GamepadBridge.dmg --clobber
+          else
+            gh release create "$TAG" GamepadBridge.dmg \
+              --title "GamepadBridge ${{ steps.v.outputs.version }}" \
+              --notes-file notes.md
+          fi
+
+          echo "https://github.com/${{ github.repository }}/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
