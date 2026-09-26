@@ -26,6 +26,7 @@
 #include "../driverkit/shared/gamepad_report.h"
 #include "xbox_bt_profile.h"
 
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -246,6 +247,7 @@ public:
     void create(const DeviceInfo &info) override
     {
         minimal = std::getenv(ENV_MINIMAL_HID) != nullptr;
+        serial = info.serial;
 
         const char *preset = std::getenv(ENV_IDS);
 
@@ -502,10 +504,25 @@ private:
         if (!parseXboxBtRumble(reportId, data, static_cast<size_t>(length),
                                effect))
         {
-            Log::debug("[corehid] Ignoring output report %02x, %ld bytes",
-                       reportId, length);
+            // Once per pad: enough to tell whether a game sends something
+            // else than expected, without flooding the log at 60 Hz.
+            if (!self->reportedOther.exchange(true))
+            {
+                Log::info("[corehid] %s: ignoring output report %02x, %ld "
+                          "bytes, starting %02x", self->serial.c_str(),
+                          reportId, length, data[0]);
+            }
 
             return;
+        }
+
+        // Once per pad, so a test can tell "the game never asked" from "the
+        // controller did not move".
+        if (!self->reportedRumble.exchange(true))
+        {
+            Log::info("[corehid] %s: first rumble request (LT %d RT %d L %d "
+                      "R %d)", self->serial.c_str(), effect.leftTrigger,
+                      effect.rightTrigger, effect.left, effect.right);
         }
 
         std::lock_guard<std::mutex> lock(self->rumbleMutex);
@@ -524,6 +541,10 @@ private:
 
     std::mutex rumbleMutex;
     RumbleCallback rumble;
+
+    std::string serial;
+    std::atomic<bool> reportedRumble{false};
+    std::atomic<bool> reportedOther{false};
 
     GuideRoute guideRoute = GuideNone;
     int guideBit = 0;
