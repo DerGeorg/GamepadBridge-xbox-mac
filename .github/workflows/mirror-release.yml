@@ -45,6 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      # There is no checkout, so gh cannot read the repository from .git and
+      # fails with "not a git repository". Tell it instead.
+      GH_REPO: ${{ github.repository }}
       GITLAB_PROJECT: mac%2Fgamepadbridge
       GITLAB_HOST: https://gitlab.dergeorg.at
 
