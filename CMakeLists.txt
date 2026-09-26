@@ -124,7 +124,12 @@ set(CORE_SOURCES
     src/permissions.cpp
 )
 
-set(BACKEND_FRAMEWORKS "")
+# permissions.cpp is part of every build and checks Accessibility through
+# ApplicationServices, so every build links it. It used to be added only in
+# the menu bar branch, which left the console build failing to link
+# (AXIsProcessTrusted undefined) without the app build noticing.
+find_library(APPSERVICES_FRAMEWORK ApplicationServices REQUIRED)
+set(BACKEND_FRAMEWORKS ${APPSERVICES_FRAMEWORK})
 
 if(XOW_BACKEND STREQUAL "console")
     list(APPEND CORE_SOURCES src/output_console.cpp)
@@ -153,8 +158,7 @@ elseif(XOW_BACKEND STREQUAL "corehid")
     if(XOW_MENUBAR)
         list(APPEND CORE_SOURCES src/menubar.swift src/update_check.swift src/permission_panel.swift)
         find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
-        find_library(APPSERVICES_FRAMEWORK ApplicationServices REQUIRED)
-        list(APPEND BACKEND_FRAMEWORKS ${APPKIT_FRAMEWORK} ${APPSERVICES_FRAMEWORK})
+        list(APPEND BACKEND_FRAMEWORKS ${APPKIT_FRAMEWORK})
         set(XOW_MENUBAR_ACTIVE ON)
 
         if(XOW_SPARKLE)
