@@ -27,13 +27,20 @@
 #include "xbox_bt_profile.h"
 
 #include <cstdint>
-#include <cstring>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <vector>
 
-// Implemented in corehid_shim.swift.
+// Implemented in corehid_shim.swift. `pad` is an opaque handle, one per
+// controller; create always sets it, and it must always be destroyed.
 extern "C" {
+    typedef void (*gpb_output_report_fn)(void *context,
+                                         uint8_t reportId,
+                                         const uint8_t *data,
+                                         long length);
+
     int32_t gpb_corehid_create(const uint8_t *descriptor,
                                long descriptorLength,
                                uint32_t vendorId,
@@ -41,10 +48,14 @@ extern "C" {
                                uint64_t version,
                                const char *product,
                                const char *manufacturer,
-                               const char *transport);
-    void gpb_corehid_send(const uint8_t *bytes, long length);
-    int32_t gpb_corehid_take_error(char *buffer, long capacity);
-    void gpb_corehid_destroy(void);
+                               const char *transport,
+                               const char *serial,
+                               gpb_output_report_fn onOutput,
+                               void *context,
+                               void **pad);
+    void gpb_corehid_send(void *pad, const uint8_t *bytes, long length);
+    int32_t gpb_corehid_take_error(void *pad, char *buffer, long capacity);
+    void gpb_corehid_destroy(void *pad);
 }
 
 namespace
@@ -63,10 +74,17 @@ namespace
      *   GAMEPADBRIDGE_TRANSPORT=usb|bluetooth|ble|virtual|none
      *   GAMEPADBRIDGE_MINIMAL_HID=1   textbook-minimal descriptor instead of
      *                                 our full Xbox layout (descriptor bisect)
+     *   GAMEPADBRIDGE_GUIDE=<route>   where the Xbox button goes — still an
+     *                                 experiment, so off unless asked for:
+     *        report     its own input report 2, which is where SDL reads it
+     *                   (adds the report to the descriptor)
+     *        bit10..15  that bit of the buttons in report 1, in case
+     *                   GameController reads it from there
      */
     #define ENV_MINIMAL_HID "GAMEPADBRIDGE_MINIMAL_HID"
     #define ENV_IDS         "GAMEPADBRIDGE_IDS"
     #define ENV_TRANSPORT   "GAMEPADBRIDGE_TRANSPORT"
+    #define ENV_GUIDE       "GAMEPADBRIDGE_GUIDE"
     // Superseded by GAMEPADBRIDGE_IDS=neutral; still honoured.
     #define ENV_NEUTRAL_IDS "GAMEPADBRIDGE_NEUTRAL_IDS"
 
@@ -210,10 +228,19 @@ public:
 
     ~CoreHidOutput() override
     {
-        if (active)
+        // Also after a failed create: the handle holds the error message.
+        // Once this returns, the shim delivers no more output reports.
+        if (pad)
         {
-            gpb_corehid_destroy();
+            gpb_corehid_destroy(pad);
         }
+    }
+
+    void setRumbleCallback(RumbleCallback callback) override
+    {
+        std::lock_guard<std::mutex> lock(rumbleMutex);
+
+        rumble = std::move(callback);
     }
 
     void create(const DeviceInfo &info) override
@@ -258,6 +285,24 @@ public:
             descriptor = kXboxBtReportDescriptor;
             descriptorLength = sizeof(kXboxBtReportDescriptor);
             shape = "xbox-bt";
+
+            chooseGuideRoute();
+
+            if (guideRoute == GuideReport)
+            {
+                // Declared inside the game pad collection: in front of the
+                // descriptor's last byte, its final End Collection.
+                withGuide.assign(kXboxBtReportDescriptor,
+                                 kXboxBtReportDescriptor
+                                     + sizeof(kXboxBtReportDescriptor) - 1);
+                withGuide.insert(withGuide.end(), kXboxBtGuideItems,
+                                 kXboxBtGuideItems + sizeof(kXboxBtGuideItems));
+                withGuide.push_back(0xC0);
+
+                descriptor = withGuide.data();
+                descriptorLength = withGuide.size();
+                shape = "xbox-bt+guide-report";
+            }
         }
 
         Log::info(
@@ -275,7 +320,11 @@ public:
             info.version,
             identity.product,
             identity.manufacturer,
-            transport);
+            transport,
+            info.serial.c_str(),
+            &CoreHidOutput::outputReport,
+            this,
+            &pad);
 
         if (result != 0)
         {
@@ -283,7 +332,7 @@ public:
             // stuck in the shim (update() never runs when creation failed).
             char message[512];
 
-            if (gpb_corehid_take_error(message, sizeof(message)))
+            if (gpb_corehid_take_error(pad, message, sizeof(message)))
             {
                 Log::error("[corehid] %s", message);
             }
@@ -297,8 +346,8 @@ public:
             // The startup check passes when Input Monitoring is granted, but
             // a refusal here means something else is still in the way. Put it
             // in the menu rather than only in a log nobody is watching.
-            Status::setConnection("Virtual gamepad refused - permissions "
-                                  "missing", false);
+            Status::setMessage("Virtual gamepad refused - permissions "
+                               "missing");
 
             // Back into asking. A refusal here means something is still
             // withheld, and the window explains which — far better than a
@@ -310,8 +359,11 @@ public:
 
         active = true;
 
-        Log::info("[corehid] Virtual gamepad created (presenting as %s)",
-                  identity.product);
+        // Whatever refusal came before, this one got through.
+        Status::setMessage("");
+
+        Log::info("[corehid] Virtual gamepad %s created (presenting as %s)",
+                  info.serial.c_str(), identity.product);
         Log::info("[corehid] Waiting for the first report to confirm it works...");
     }
 
@@ -327,6 +379,7 @@ public:
             MinimalReport small = mapStateMinimal(state);
 
             gpb_corehid_send(
+                pad,
                 reinterpret_cast<const uint8_t *>(&small),
                 static_cast<long>(sizeof(small)));
         }
@@ -335,9 +388,29 @@ public:
         {
             XboxBtReport report = makeXboxBtReport(state);
 
+            if (guideRoute == GuideBit && state.guide)
+            {
+                report.buttons |= static_cast<uint16_t>(1u << guideBit);
+            }
+
             gpb_corehid_send(
+                pad,
                 reinterpret_cast<const uint8_t *>(&report),
                 static_cast<long>(sizeof(report)));
+
+            // Only on a change, like a real pad: SDL treats every report 2
+            // as a press or release.
+            if (guideRoute == GuideReport && state.guide != guideDown)
+            {
+                guideDown = state.guide;
+
+                XboxBtGuideReport guide = { 0x02, guideDown ? uint8_t(1) : uint8_t(0) };
+
+                gpb_corehid_send(
+                    pad,
+                    reinterpret_cast<const uint8_t *>(&guide),
+                    static_cast<long>(sizeof(guide)));
+            }
         }
 
         else
@@ -345,6 +418,7 @@ public:
             GamepadReport report = mapState(state);
 
             gpb_corehid_send(
+                pad,
                 reinterpret_cast<const uint8_t *>(&report),
                 static_cast<long>(sizeof(report)));
         }
@@ -352,7 +426,7 @@ public:
         // CoreHID reports refusals asynchronously; surface the first one.
         char message[512];
 
-        if (gpb_corehid_take_error(message, sizeof(message)))
+        if (gpb_corehid_take_error(pad, message, sizeof(message)))
         {
             Log::error("[corehid] %s", message);
         }
@@ -366,10 +440,95 @@ public:
     }
 
 private:
+    enum GuideRoute { GuideNone, GuideReport, GuideBit };
+
+    void chooseGuideRoute()
+    {
+        const char *route = std::getenv(ENV_GUIDE);
+
+        if (!route || !*route)
+        {
+            return;
+        }
+
+        std::string value(route);
+
+        if (value == "report")
+        {
+            guideRoute = GuideReport;
+        }
+
+        else if (value.size() >= 4 && value.compare(0, 3, "bit") == 0)
+        {
+            int bit = std::atoi(value.c_str() + 3);
+
+            // Bits 0-9 are the other buttons.
+            if (bit >= 10 && bit <= 15)
+            {
+                guideRoute = GuideBit;
+                guideBit = bit;
+            }
+        }
+
+        if (guideRoute == GuideNone)
+        {
+            Log::error("[corehid] Unknown " ENV_GUIDE " '%s' - use report or "
+                       "bit10..bit15", route);
+        }
+
+        else
+        {
+            Log::info("[corehid] Xbox button: %s", route);
+        }
+    }
+
+    /*
+     * An output report from a game, on CoreHID's thread. The only one this
+     * profile declares is rumble; it is parsed here and handed on, and the
+     * callback queues it for the USB thread rather than sending it itself.
+     */
+    static void outputReport(void *context, uint8_t reportId,
+                             const uint8_t *data, long length)
+    {
+        CoreHidOutput *self = static_cast<CoreHidOutput *>(context);
+
+        if (!data || length <= 0 || self->profile != ProfileXboxBt)
+        {
+            return;
+        }
+
+        RumbleEffect effect;
+
+        if (!parseXboxBtRumble(reportId, data, static_cast<size_t>(length),
+                               effect))
+        {
+            Log::debug("[corehid] Ignoring output report %02x, %ld bytes",
+                       reportId, length);
+
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(self->rumbleMutex);
+
+        if (self->rumble)
+        {
+            self->rumble(effect);
+        }
+    }
+
+    void *pad = nullptr;
     bool active;
     bool minimal = false;
     bool confirmed = false;
     Profile profile = ProfileGeneric;
+
+    std::mutex rumbleMutex;
+    RumbleCallback rumble;
+
+    GuideRoute guideRoute = GuideNone;
+    int guideBit = 0;
+    bool guideDown = false;
+    std::vector<uint8_t> withGuide;
 };
 
 std::unique_ptr<OutputDevice> makeOutputDevice()

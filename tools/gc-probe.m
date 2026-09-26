@@ -17,7 +17,9 @@
  *         -o /tmp/gc-probe tools/gc-probe.m && /tmp/gc-probe
  *
  *   /tmp/gc-probe watch     live element values; press buttons and read off
- *                           which GameController input each one drives
+ *                           which GameController input each one drives.
+ *                           With several controllers, each line says which
+ *                           one (#1, #2, ...) in the order they appeared.
  */
 
 #import <Foundation/Foundation.h>
@@ -80,6 +82,24 @@ static void snapshot(GCExtendedGamepad *g)
 
 static void watch(GCController *c)
 {
+    static int watched = 0;
+
+    // A pad present at start can also be announced by a connect
+    // notification; watching it twice would give it two numbers.
+    static NSHashTable<GCController *> *seen;
+
+    if (!seen)
+    {
+        seen = [NSHashTable weakObjectsHashTable];
+    }
+
+    if ([seen containsObject:c])
+    {
+        return;
+    }
+
+    [seen addObject:c];
+
     GCExtendedGamepad *g = c.extendedGamepad;
 
     if (!g)
@@ -88,7 +108,31 @@ static void watch(GCController *c)
         return;
     }
 
+    // Numbered in the order they turned up, so two pads can be told apart.
+    const int number = ++watched;
+
+    printf("\n#%d:\n", number);
+
     snapshot(g);
+
+    /*
+     * The Xbox button. GameController only creates buttonHome for a device
+     * it thinks has one, so its mere presence is the first answer. And by
+     * default macOS keeps the press for itself (Launchpad, the Games app),
+     * so a probe that does not opt out never sees it arrive.
+     */
+    if (g.buttonHome)
+    {
+        g.buttonHome.preferredSystemGestureState = GCSystemGestureStateDisabled;
+        printf("  buttonHome  present (system gesture disabled for this probe)\n");
+    }
+    else
+    {
+        printf("  buttonHome  absent — GameController thinks this pad has no "
+               "Xbox button\n");
+    }
+
+    fflush(stdout);
 
     g.valueChangedHandler = ^(GCExtendedGamepad *pad, GCControllerElement *el) {
         const char *name = el.localizedName.UTF8String ?: "?";
@@ -98,22 +142,22 @@ static void watch(GCController *c)
             GCControllerButtonInput *b = (GCControllerButtonInput *)el;
 
             stamp();
-            printf("%-22s %-4s value=%.3f\n",
-                   name, b.isPressed ? "DOWN" : "up", b.value);
+            printf("#%d %-22s %-4s value=%.3f\n",
+                   number, name, b.isPressed ? "DOWN" : "up", b.value);
         }
         else if ([el isKindOfClass:[GCControllerDirectionPad class]])
         {
             GCControllerDirectionPad *d = (GCControllerDirectionPad *)el;
 
             stamp();
-            printf("%-22s x=%+.3f y=%+.3f\n",
-                   name, d.xAxis.value, d.yAxis.value);
+            printf("#%d %-22s x=%+.3f y=%+.3f\n",
+                   number, name, d.xAxis.value, d.yAxis.value);
         }
         else if ([el isKindOfClass:[GCControllerAxisInput class]])
         {
             stamp();
-            printf("%-22s %+.3f\n",
-                   name, ((GCControllerAxisInput *)el).value);
+            printf("#%d %-22s %+.3f\n",
+                   number, name, ((GCControllerAxisInput *)el).value);
         }
 
         fflush(stdout);

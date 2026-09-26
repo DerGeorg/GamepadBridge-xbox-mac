@@ -22,7 +22,9 @@
 #include "gip.h"
 #include "../output.h"
 
+#include <functional>
 #include <memory>
+#include <string>
 
 /*
  * Translates GIP gamepad events into a normalized GamepadState and forwards
@@ -37,8 +39,29 @@
 class Controller : public GipDevice
 {
 public:
-    Controller(SendPacket sendPacket);
+    // Runs work on the USB thread, with this controller — if it is still
+    // connected by the time the work comes up. Everything that ends in a USB
+    // transfer has to go through here: libusb on macOS deadlocks when two
+    // threads transfer at once (see usb.h).
+    using Post = std::function<void(std::function<void(Controller &)>)>;
+
+    // `number` is how the menu names it; `serial` tells the virtual pad
+    // apart from the other controllers' (see DeviceInfo::serial).
+    Controller(
+        uint8_t number,
+        const std::string &serial,
+        SendPacket sendPacket,
+        Post post
+    );
     ~Controller();
+
+    // On the USB thread only.
+    void rumble(const RumbleEffect &effect);
+
+    // The controller's own rumble command carries the same fields, in the
+    // same order, as the Bluetooth pad's rumble report. Public so the test
+    // can hold the bytes against what SDL sends a wired controller.
+    static RumbleData gipRumble(const RumbleEffect &effect);
 
 private:
     /* GIP events */
@@ -51,8 +74,32 @@ private:
     /* Device initialization */
     void initInput(const AnnounceData *announce);
 
+    uint8_t number;
+    std::string serial;
+
     std::unique_ptr<OutputDevice> output;
     GamepadState state;
 
     uint8_t batteryLevel = 0xff;
 };
+
+inline GipDevice::RumbleData Controller::gipRumble(const RumbleEffect &effect)
+{
+    RumbleData rumble = {};
+
+    rumble.setRight        = (effect.enable & 0x01) != 0;
+    rumble.setLeft         = (effect.enable & 0x02) != 0;
+    rumble.setRightTrigger = (effect.enable & 0x04) != 0;
+    rumble.setLeftTrigger  = (effect.enable & 0x08) != 0;
+
+    rumble.leftTrigger  = effect.leftTrigger;
+    rumble.rightTrigger = effect.rightTrigger;
+    rumble.left         = effect.left;
+    rumble.right        = effect.right;
+
+    rumble.duration = effect.duration;
+    rumble.delay    = effect.delay;
+    rumble.repeat   = effect.repeat;
+
+    return rumble;
+}

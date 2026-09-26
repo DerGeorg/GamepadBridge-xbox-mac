@@ -91,7 +91,7 @@ namespace
 
         Log::error("Input Monitoring and Accessibility are not both granted.");
 
-        Status::setConnection("Needs permissions", false);
+        Status::setMessage("Needs permissions");
 
 #ifdef GAMEPADBRIDGE_MENUBAR
         // The menu bar shows a window that stays up and watches for them
@@ -198,6 +198,7 @@ namespace
         DeviceInfo info;
         info.version = 1;
         info.name = "GamepadBridge Self-Test";
+        info.serial = "self-test";
 
         output->create(info);
 
@@ -327,7 +328,7 @@ namespace
 
         Dongle dongle(std::move(device));
 
-        Status::setConnection("No controller", false);
+        Status::setMessage("");
 
         Log::info("Ready. Press the dongle button (or send SIGUSR1) to pair.");
 

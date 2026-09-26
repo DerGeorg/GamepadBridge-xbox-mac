@@ -87,6 +87,10 @@ public:
     // Service libusb events for up to `timeoutMs`, running reader callbacks.
     void pumpEvents(int timeoutMs);
 
+    // Makes a pumpEvents() that is waiting on another thread return now.
+    // The one call here that is safe from any thread.
+    void wake();
+
     // Cancel all readers and block until their callbacks can no longer fire.
     // Must be called on the same thread that calls pumpEvents().
     void stopReaders();

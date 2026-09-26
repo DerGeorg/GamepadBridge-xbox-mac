@@ -54,6 +54,11 @@ public:
     void enablePairing();
 
 private:
+    // Runs `task` on the USB thread, soon.
+    void post(std::function<void()> task);
+
+    static std::string formatAddress(const Bytes &address);
+
     /* Packet handling */
     void handleControllerConnect(Bytes address);
     void handleControllerDisconnect(uint8_t wcid);

@@ -36,9 +36,23 @@
 #define DEVICE_NAME "Xbox One Wireless Controller"
 
 Controller::Controller(
-    SendPacket sendPacket
+    uint8_t number,
+    const std::string &serial,
+    SendPacket sendPacket,
+    Post post
 ) : GipDevice(sendPacket),
-    output(makeOutputDevice()) {}
+    number(number),
+    serial(serial),
+    output(makeOutputDevice())
+{
+    // Arrives on CoreHID's thread, so it is only queued here and sent from
+    // the USB thread.
+    output->setRumbleCallback([post](const RumbleEffect &effect) {
+        post([effect](Controller &controller) {
+            controller.rumble(effect);
+        });
+    });
+}
 
 Controller::~Controller()
 {
@@ -82,9 +96,9 @@ void Controller::statusReceived(uint8_t /*id*/, const StatusData *status)
         return;
     }
 
-    Log::info("Battery level: %s", levels[level].c_str());
+    Log::info("Controller %d battery level: %s", number, levels[level].c_str());
 
-    Status::setBattery(levels[level]);
+    Status::setBattery(number, levels[level]);
 
     batteryLevel = level;
 }
@@ -93,6 +107,14 @@ void Controller::guideButtonPressed(const GuideButtonData *button)
 {
     state.guide = button->pressed;
     output->update(state);
+}
+
+void Controller::rumble(const RumbleEffect &effect)
+{
+    if (!performRumble(gipRumble(effect)))
+    {
+        Log::error("Failed to send rumble to controller %d", number);
+    }
 }
 
 void Controller::serialNumberReceived(const SerialData *serial)
@@ -181,6 +203,8 @@ void Controller::initInput(const AnnounceData *announce)
             announce->firmwareVersion.minor;
         info.name = DEVICE_NAME;
     }
+
+    info.serial = serial;
 
     output->create(info);
 }

@@ -4,8 +4,9 @@
 //  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  Without this the app is a background process with no way to see whether it
-//  is working or to stop it short of Activity Monitor. The menu shows the link
-//  state and battery level, offers pairing, and quits cleanly.
+//  is working or to stop it short of Activity Monitor. The menu shows each
+//  connected controller with its battery level, offers pairing, and quits
+//  cleanly.
 //
 //  It polls the status board once a second rather than being pushed to from
 //  the USB thread: a status line does not need to be more immediate than that,
@@ -26,12 +27,14 @@ private func connectionText() -> String {
     return String(cString: buffer)
 }
 
-private func batteryText() -> String {
-    var buffer = [CChar](repeating: 0, count: 256)
+private func controllerLines() -> [String] {
+    (0..<Int(gpb_status_controller_count())).map { index in
+        var buffer = [CChar](repeating: 0, count: 256)
 
-    gpb_status_battery(&buffer, buffer.count)
+        gpb_status_controller(Int32(index), &buffer, buffer.count)
 
-    return String(cString: buffer)
+        return String(cString: buffer)
+    }
 }
 
 private final class MenuBar: NSObject {
@@ -39,7 +42,9 @@ private final class MenuBar: NSObject {
         withLength: NSStatusItem.variableLength)
 
     private let connection = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let battery = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+
+    // One per connected controller, directly below `connection`.
+    private var controllers: [NSMenuItem] = []
 
     /*
      * Sparkle downloads and installs updates itself, and asks on first launch
@@ -75,10 +80,8 @@ private final class MenuBar: NSObject {
         let menu = NSMenu()
 
         connection.isEnabled = false
-        battery.isEnabled = false
 
         menu.addItem(connection)
-        menu.addItem(battery)
         menu.addItem(.separator())
 
         let pair = NSMenuItem(title: "Pair a Controller",
@@ -121,12 +124,12 @@ private final class MenuBar: NSObject {
     }
 
     private func refresh() {
-        connection.title = connectionText()
+        let headline = connectionText()
 
-        let level = batteryText()
+        connection.title = headline
+        connection.isHidden = headline.isEmpty
 
-        battery.title = "Battery: \(level)"
-        battery.isHidden = level.isEmpty
+        showControllers(controllerLines())
 
         // A filled icon while a controller is attached, an outline otherwise,
         // so the state is readable without opening the menu at all.
@@ -143,6 +146,28 @@ private final class MenuBar: NSObject {
         // or hours later when a controller connects - the window comes back.
         if gpb_needs_permission() != 0, !permissions.isVisible {
             permissions.show()
+        }
+    }
+
+    // Rebuilt only when something changed, so an open menu does not flicker.
+    private func showControllers(_ lines: [String]) {
+        guard lines != controllers.map(\.title), let menu = item.menu else {
+            return
+        }
+
+        controllers.forEach(menu.removeItem)
+
+        controllers = lines.map { line in
+            let entry = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            entry.isEnabled = false
+            return entry
+        }
+
+        var position = menu.index(of: connection) + 1
+
+        for entry in controllers {
+            menu.insertItem(entry, at: position)
+            position += 1
         }
     }
 

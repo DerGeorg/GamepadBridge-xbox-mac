@@ -19,12 +19,17 @@
  * held to the record: the two historical layouts at the bottom must fail in
  * exactly the way that was seen, or the model is wrong again.
  *
+ * And the way back: a rumble report from SDL has to leave for the controller
+ * as exactly the command SDL itself sends a wired Xbox One pad.
+ *
  *   clang++ -std=c++11 -I src test/xbox_bt/main.cpp -o /tmp/xbt && /tmp/xbt
  */
 
 #include "xbox_bt_profile.h"
+#include "controller/controller.h"
 
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <string>
 #include <vector>
@@ -51,6 +56,55 @@ namespace
         for (const std::string &s : seen) out += (out.empty() ? "" : "+") + s;
 
         return out;
+    }
+
+    /*
+     * Walks a report descriptor the way the OS does and adds up the bits
+     * each report carries. A descriptor mistake is not an error anywhere
+     * else: macOS just drops the reports, and the pad looks dead.
+     */
+    struct Layout
+    {
+        bool balanced = false;           // every Collection is closed
+        int  topLevel = 0;               // top-level collections
+        std::map<int, int> inputBits;    // report ID -> bits
+        std::map<int, int> outputBits;
+    };
+
+    Layout walk(const std::vector<uint8_t> &d)
+    {
+        Layout layout;
+        int depth = 0, reportId = 0, size = 0, count = 0;
+
+        for (size_t i = 0; i < d.size();)
+        {
+            const uint8_t prefix = d[i];
+            const int length = (prefix & 3) == 3 ? 4 : (prefix & 3);
+
+            uint32_t value = 0;
+
+            for (int k = 0; k < length && i + 1 + k < d.size(); k++)
+            {
+                value |= uint32_t(d[i + 1 + k]) << (8 * k);
+            }
+
+            switch (prefix & 0xFC)
+            {
+                case 0x84: reportId = int(value); break;           // Report ID
+                case 0x74: size = int(value); break;               // Report Size
+                case 0x94: count = int(value); break;              // Report Count
+                case 0x80: layout.inputBits[reportId] += size * count; break;
+                case 0x90: layout.outputBits[reportId] += size * count; break;
+                case 0xA0: if (depth++ == 0) layout.topLevel++; break;
+                case 0xC0: depth--; break;
+            }
+
+            i += 1 + length;
+        }
+
+        layout.balanced = depth == 0;
+
+        return layout;
     }
 
     // GameController: bit N of the field at bytes 14-15 is the Nth button.
@@ -201,6 +255,92 @@ int main()
         expect(seen == o.seen, std::string("GameController reads ") + o.pressed
                + " as " + seen + ", as observed: " + o.seen);
     }
+
+    /*
+     * The descriptor, with and without the Xbox button's report — the second
+     * is assembled exactly as output_corehid.cpp does it.
+     */
+    printf("\ndescriptor:\n");
+
+    const std::vector<uint8_t> base(
+        kXboxBtReportDescriptor,
+        kXboxBtReportDescriptor + sizeof(kXboxBtReportDescriptor));
+
+    std::vector<uint8_t> guided(base.begin(), base.end() - 1);
+    guided.insert(guided.end(), kXboxBtGuideItems,
+                  kXboxBtGuideItems + sizeof(kXboxBtGuideItems));
+    guided.push_back(0xC0);
+
+    Layout plain = walk(base), withGuide = walk(guided);
+
+    expect(plain.balanced && plain.topLevel == 1,
+           "one game pad collection, every collection closed");
+    expect(plain.inputBits[1] == 8 * (int(sizeof(XboxBtReport)) - 1),
+           "report 1 declares exactly the 15 bytes after its ID");
+    expect(plain.outputBits[3] == 8 * 8,
+           "report 3 (rumble) declares the 8 bytes parseXboxBtRumble reads");
+    expect(withGuide.balanced && withGuide.topLevel == 1,
+           "with the Xbox button: still one collection, still closed");
+    expect(withGuide.inputBits[2] == 8 * (int(sizeof(XboxBtGuideReport)) - 1)
+           && withGuide.inputBits[1] == plain.inputBits[1]
+           && withGuide.outputBits[3] == plain.outputBits[3],
+           "report 2 is one byte, reports 1 and 3 unchanged");
+
+    /*
+     * Rumble. SDL_hidapi_xboxone.c sends a Bluetooth pad
+     *     03 0F LT RT L R FF 00 EB
+     * and a wired one the GIP command 09 00 seq 09 followed by
+     *     00 0F LT RT L R FF 00 EB
+     * The payloads differ only in their first byte, which is why a request
+     * can pass through untouched.
+     */
+    printf("\nrumble — what SDL sends, and what leaves for the controller:\n");
+
+    const uint8_t sdlBluetooth[] = { 0x03, 0x0F, 20, 40, 60, 80, 0xFF, 0x00, 0xEB };
+    const uint8_t sdlWiredPayload[] = { 0x00, 0x0F, 20, 40, 60, 80, 0xFF, 0x00, 0xEB };
+
+    RumbleEffect effect;
+
+    expect(parseXboxBtRumble(0, sdlBluetooth, sizeof(sdlBluetooth), effect),
+           "SDL's report is accepted with the ID in front");
+
+    const auto gip = Controller::gipRumble(effect);
+
+    expect(sizeof(gip) == sizeof(sdlWiredPayload)
+           && memcmp(&gip, sdlWiredPayload, sizeof(gip)) == 0,
+           "and leaves as the bytes SDL sends a wired controller");
+
+    RumbleEffect beside;
+
+    expect(parseXboxBtRumble(0x03, sdlBluetooth + 1, sizeof(sdlBluetooth) - 1,
+                             beside)
+           && memcmp(&beside, &effect, sizeof(effect)) == 0,
+           "the same with the ID given beside the data");
+
+    const uint8_t stop[] = { 0x03, 0x0F, 0, 0, 0, 0, 0xFF, 0x00, 0xEB };
+    RumbleEffect stopped;
+
+    expect(parseXboxBtRumble(0, stop, sizeof(stop), stopped)
+           && stopped.left == 0 && stopped.right == 0
+           && stopped.leftTrigger == 0 && stopped.rightTrigger == 0,
+           "a stop is all zero magnitudes");
+
+    const uint8_t loud[] = { 0x03, 0x0F, 255, 101, 200, 100, 0xFF, 0x00, 0xEB };
+    RumbleEffect capped;
+
+    expect(parseXboxBtRumble(0, loud, sizeof(loud), capped)
+           && capped.leftTrigger == 100 && capped.rightTrigger == 100
+           && capped.left == 100 && capped.right == 100,
+           "magnitudes above 100 are capped at 100");
+
+    const uint8_t otherId[] = { 0x05, 0x0F, 20, 40, 60, 80, 0xFF, 0x00, 0xEB };
+    const uint8_t tooShort[] = { 0x03, 0x0F, 20, 40 };
+    RumbleEffect unused;
+
+    expect(!parseXboxBtRumble(0, otherId, sizeof(otherId), unused)
+           && !parseXboxBtRumble(0x05, otherId + 1, 8, unused)
+           && !parseXboxBtRumble(0, tooShort, sizeof(tooShort), unused),
+           "other reports and short ones are refused");
 
     printf(failures ? "\n%d failed\n" : "\nall passed\n", failures);
 

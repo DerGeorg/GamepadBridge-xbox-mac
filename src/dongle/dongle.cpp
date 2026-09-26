@@ -20,6 +20,9 @@
 #include "../status.h"
 #include "../utils/log.h"
 
+#include <cstdio>
+#include <string>
+
 Dongle::Dongle(
     std::unique_ptr<UsbDevice> usbDevice
 ) : Mt76(std::move(usbDevice)), stopThread(false)
@@ -41,9 +44,20 @@ Dongle::~Dongle()
 
 void Dongle::enablePairing()
 {
-    std::lock_guard<std::mutex> lock(taskMutex);
+    post([this] { setPairingStatus(true); });
+}
 
-    tasks.push([this] { setPairingStatus(true); });
+void Dongle::post(std::function<void()> task)
+{
+    {
+        std::lock_guard<std::mutex> lock(taskMutex);
+
+        tasks.push(std::move(task));
+    }
+
+    // Otherwise it waits for the next USB event, up to 100 ms when the
+    // controllers are idle — long enough to feel in a rumble.
+    usbDevice->wake();
 }
 
 void Dongle::usbThreadMain()
@@ -102,6 +116,22 @@ void Dongle::usbThreadMain()
     usbDevice->stopReaders();
 }
 
+// The radio address, as the virtual pad's serial number: unique per
+// controller and the same every time it reconnects.
+std::string Dongle::formatAddress(const Bytes &address)
+{
+    std::string text;
+    char part[4];
+
+    for (uint8_t byte : address)
+    {
+        snprintf(part, sizeof(part), text.empty() ? "%02x" : ":%02x", byte);
+        text += part;
+    }
+
+    return text;
+}
+
 void Dongle::handleControllerConnect(Bytes address)
 {
     std::lock_guard<std::mutex> lock(controllerMutex);
@@ -123,11 +153,32 @@ void Dongle::handleControllerConnect(Bytes address)
         std::placeholders::_1
     );
 
-    controllers[wcid - 1].reset(new Controller(sendPacket));
+    // Looked up again when the work runs: by then the controller may have
+    // disconnected. Disconnects happen on the USB thread as well, so it is
+    // either still there or already gone, never halfway.
+    Controller::Post postToController = [this, wcid](
+        std::function<void(Controller &)> work
+    ) {
+        post([this, wcid, work] {
+            std::lock_guard<std::mutex> lock(controllerMutex);
+
+            if (controllers[wcid - 1])
+            {
+                work(*controllers[wcid - 1]);
+            }
+        });
+    };
+
+    controllers[wcid - 1].reset(new Controller(
+        wcid,
+        formatAddress(address),
+        sendPacket,
+        postToController
+    ));
 
     Log::info("Controller '%d' connected", wcid);
 
-    Status::setConnection("Controller connected", true);
+    Status::controllerConnected(wcid);
 }
 
 void Dongle::handleControllerDisconnect(uint8_t wcid)
@@ -157,7 +208,7 @@ void Dongle::handleControllerDisconnect(uint8_t wcid)
 
     Log::info("Controller '%d' disconnected", wcid);
 
-    Status::setConnection("No controller", false);
+    Status::controllerDisconnected(wcid);
 }
 
 void Dongle::handleControllerPair(Bytes address, const Bytes &packet)

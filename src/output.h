@@ -62,12 +62,24 @@ struct GamepadState
     int16_t stickRightX = 0, stickRightY = 0;
 };
 
-// Force feedback request coming from the host towards the controller.
-// Values are 0..255. Wired up by Stage 2 backends only.
+/*
+ * Force feedback from a game towards the controller.
+ *
+ * The same fields in the same order as the controller's own rumble command
+ * (GipDevice::RumbleData) and as the Bluetooth pad's output report: Microsoft
+ * tunnels one format through both, so a request passes through untouched.
+ *
+ *   enable     which motors this request sets: 0x01 right (weak), 0x02 left
+ *              (strong), 0x04 right trigger, 0x08 left trigger
+ *   magnitude  0..100 per motor
+ *   duration   in 10 ms steps, then `delay` off, repeated `repeat` more times
+ */
 struct RumbleEffect
 {
-    uint8_t left = 0, right = 0;
+    uint8_t enable = 0;
     uint8_t leftTrigger = 0, rightTrigger = 0;
+    uint8_t left = 0, right = 0;
+    uint8_t duration = 0, delay = 0, repeat = 0;
 };
 
 // Identity reported by the controller during the GIP announce handshake.
@@ -77,6 +89,11 @@ struct DeviceInfo
     uint16_t productId = 0;
     uint16_t version = 0;
     std::string name;
+
+    // Tells two controllers of the same model apart. Games and SDL key
+    // their per-controller settings on it, so it must stay the same across
+    // reconnects: the controller's radio address, not a slot number.
+    std::string serial;
 };
 
 /*
@@ -97,6 +114,9 @@ public:
 
     // Optional: backend invokes this when the OS sends rumble to the
     // virtual device. Default backends that have no FF channel ignore it.
+    // Set before create(): a game may send rumble the moment the device
+    // appears. The callback runs on whichever thread the OS delivers on, so
+    // it must not touch USB itself.
     virtual void setRumbleCallback(RumbleCallback) {}
 };
 

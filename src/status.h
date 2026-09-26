@@ -18,6 +18,14 @@
 
 namespace Status
 {
-    void setConnection(const std::string &text, bool controllerPresent);
-    void setBattery(const std::string &text);
+    // A line about the app as a whole: "Waiting for adapter", a refusal.
+    // Empty once there is nothing to say beyond the controllers themselves.
+    void setMessage(const std::string &text);
+
+    // Controllers go by the number the adapter gave them, from 1. It stays
+    // the same while a controller is connected, so the menu does not
+    // renumber the others when one of them leaves.
+    void controllerConnected(int number);
+    void controllerDisconnected(int number);
+    void setBattery(int number, const std::string &level);
 }

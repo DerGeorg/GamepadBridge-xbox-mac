@@ -267,6 +267,11 @@ void UsbDevice::pumpEvents(int timeoutMs)
     }
 }
 
+void UsbDevice::wake()
+{
+    libusb_interrupt_event_handler(nullptr);
+}
+
 void UsbDevice::stopReaders()
 {
     stopping = true;

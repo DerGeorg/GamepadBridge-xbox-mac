@@ -9,15 +9,18 @@
 #include <atomic>
 #include <csignal>
 #include <cstring>
+#include <iterator>
+#include <map>
 #include <mutex>
 #include <unistd.h>
 
 namespace
 {
     std::mutex mutex;
-    std::string connection = "Waiting for adapter";
-    std::string battery;
-    bool present = false;
+    std::string message = "Waiting for adapter";
+
+    // Number -> battery level ("" until the controller reports one).
+    std::map<int, std::string> controllers;
 
     void copyOut(const std::string &value, char *buffer, long capacity)
     {
@@ -26,48 +29,95 @@ namespace
             return;
         }
 
-        std::lock_guard<std::mutex> lock(mutex);
-
         strlcpy(buffer, value.c_str(), static_cast<size_t>(capacity));
     }
 }
 
-void Status::setConnection(const std::string &text, bool controllerPresent)
+void Status::setMessage(const std::string &text)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    connection = text;
-    present = controllerPresent;
+    message = text;
+}
 
-    if (!controllerPresent)
+void Status::controllerConnected(int number)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    controllers[number] = "";
+}
+
+void Status::controllerDisconnected(int number)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    controllers.erase(number);
+}
+
+void Status::setBattery(int number, const std::string &level)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    // A late report from a controller that has just left must not bring
+    // its line back.
+    auto controller = controllers.find(number);
+
+    if (controller != controllers.end())
     {
-        battery.clear();
+        controller->second = level;
     }
 }
 
-void Status::setBattery(const std::string &text)
+void gpb_status_connection(char *buffer, long capacity)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    battery = text;
+    if (!message.empty())
+    {
+        copyOut(message, buffer, capacity);
+    }
+
+    else
+    {
+        copyOut(controllers.empty() ? "No controller" : "", buffer, capacity);
+    }
 }
 
-// copyOut takes the lock itself, so these must not hold it here.
-void gpb_status_connection(char *buffer, long capacity)
+int gpb_status_controller_count(void)
 {
-    copyOut(connection, buffer, capacity);
+    std::lock_guard<std::mutex> lock(mutex);
+
+    return static_cast<int>(controllers.size());
 }
 
-void gpb_status_battery(char *buffer, long capacity)
+void gpb_status_controller(int index, char *buffer, long capacity)
 {
-    copyOut(battery, buffer, capacity);
+    std::lock_guard<std::mutex> lock(mutex);
+
+    if (index < 0 || index >= static_cast<int>(controllers.size()))
+    {
+        copyOut("", buffer, capacity);
+
+        return;
+    }
+
+    auto controller = std::next(controllers.begin(), index);
+
+    std::string line = "Controller " + std::to_string(controller->first);
+
+    if (!controller->second.empty())
+    {
+        line += " \u00b7 Battery: " + controller->second;
+    }
+
+    copyOut(line, buffer, capacity);
 }
 
 int gpb_status_controller_present(void)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    return present ? 1 : 0;
+    return controllers.empty() ? 0 : 1;
 }
 
 void gpb_request_pairing(void)
