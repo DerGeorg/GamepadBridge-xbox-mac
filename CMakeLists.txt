@@ -240,14 +240,13 @@ if(XOW_SPARKLE_ACTIVE)
         XCODE_ATTRIBUTE_SWIFT_ACTIVE_COMPILATION_CONDITIONS
             "GAMEPADBRIDGE_SPARKLE")
 
-    # ditto rather than CMake's own copy: the framework's Versions/Current
-    # symlinks have to survive or the bundle cannot be signed.
+    # Embeds and signs the framework before Xcode seals the app. See the
+    # script for why an unsigned copy made development builds unlaunchable.
     add_custom_command(TARGET gamepadbridge POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_BUNDLE_CONTENT_DIR:gamepadbridge>/Frameworks"
-        COMMAND ditto "${SPARKLE_DIR}/Sparkle.framework"
-            "$<TARGET_BUNDLE_CONTENT_DIR:gamepadbridge>/Frameworks/Sparkle.framework"
-        COMMENT "Embedding Sparkle.framework")
+        COMMAND bash "${CMAKE_SOURCE_DIR}/scripts/embed-sparkle.sh"
+            "${SPARKLE_DIR}/Sparkle.framework"
+            "$<TARGET_BUNDLE_CONTENT_DIR:gamepadbridge>"
+        COMMENT "Embedding and signing Sparkle.framework")
 
     set(XOW_SPARKLE_PLIST
 "\t<key>SUFeedURL</key>

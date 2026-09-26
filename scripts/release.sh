@@ -189,8 +189,9 @@ done
 codesign --force --options runtime --timestamp \
     --sign "$IDENTITY" "$SPARKLE_FW" 2>&1 | sed 's/^/  /'
 
-# Embedding the framework happened after Xcode signed the app, so that
-# signature no longer covers the bundle's contents. Sign it again.
+# Re-signing the framework changed its code hash, and the app's seal records
+# the hash of everything nested in it — so the app is sealed again over the
+# framework as it now is.
 codesign --force --options runtime --timestamp \
     --entitlements "$ROOT/packaging/gamepadbridge.entitlements" \
     --sign "$IDENTITY" "$APP" 2>&1 | sed 's/^/  /'
