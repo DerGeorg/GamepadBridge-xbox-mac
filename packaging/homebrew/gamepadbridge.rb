@@ -1,8 +1,9 @@
 # Homebrew cask for GamepadBridge.
 #
-# Copy this into your tap (a repository named homebrew-tap, file
-# Casks/gamepadbridge.rb) and bump version + sha256 for each release;
-# scripts/release.sh prints both.
+# The copy under review. The release pipeline keeps it and the tap
+# (mac/homebrew-tap, Casks/gamepadbridge.rb) in step: release:publish writes
+# version and sha256 here and pushes the result to the tap. Edit anything else
+# here, and the next release carries it across.
 #
 # A cask rather than a formula on purpose: the virtual HID entitlement is
 # authorized by a provisioning profile embedded at signing time, so an app

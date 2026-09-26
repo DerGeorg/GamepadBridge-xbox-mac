@@ -199,3 +199,39 @@ keeps working across macOS releases.
   map correctly, the Xbox button being the exception the profile has no bit
   for.
 - ✅ **Verified in an actual game** (Unrailed) on macOS 27.
+
+## Releasing
+
+Two places, because signing cannot leave the Mac:
+
+```
+Mac        scripts/release.sh --keychain-profile gamepadbridge --publish
+             build, sign, notarize, Sparkle-sign
+             upload the disk image, check it, push a pending release
+
+Pipeline   release:verify    automatic   the same checks again
+           release:publish   one click   GitLab release + tag, appcast, tap
+
+GitHub     the mirror carries the tag, a workflow mirrors the release
+```
+
+Before running it: set `XOW_RELEASE_VERSION` in `CMakeLists.txt` and write
+`packaging/release-notes/<version>.md`. Those two may be uncommitted; any other
+uncommitted change makes `--publish` refuse, so nothing unrelated ends up in a
+release commit.
+
+**Nothing reaches users until `release:publish` runs.** The appcast — the file
+installed copies poll for updates — is written by that job, after the checks,
+and not on the Mac. A release that fails verification stays a pending file in
+the repository and nothing else.
+
+`scripts/verify-release.sh` is what stands between a mistake and every
+installed copy. It downloads the uploaded disk image and checks that it really
+is a disk image, that its length and sha256 match what Sparkle and Homebrew will
+be told, and that its EdDSA signature verifies against the public key in the
+repository. Run it by hand against any pending release; it needs OpenSSL 3,
+which macOS does not ship (`brew install openssl@3`).
+
+`scripts/publish-release.sh --dry-run` shows everything the publish job would
+send, without sending it. Each of its steps checks first whether it is already
+done, so a run that stopped half way can simply be started again.
