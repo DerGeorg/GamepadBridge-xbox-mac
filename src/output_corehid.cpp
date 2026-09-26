@@ -86,8 +86,8 @@ namespace
         Profile     profile;
     };
 
-    static_assert(sizeof(XboxBtReport) == 17,
-                  "Xbox Bluetooth input report must stay 17 bytes");
+    static_assert(sizeof(XboxBtReport) == 16,
+                  "Xbox Bluetooth input report must stay 16 bytes: at 17, SDL reads the buttons with gaps (see xbox_bt_profile.h)");
 
     /*
      * "xbox-bt" is the default because it is the only Xbox controller macOS
@@ -167,57 +167,6 @@ namespace
         if (s.x) b |= 1u << 2;
         if (s.y) b |= 1u << 3;
         r.buttons = b;
-
-        return r;
-    }
-
-    /*
-     * HID axis convention is the opposite of ours on the vertical: 0 is up,
-     * 65535 is down, whereas GamepadState keeps the controller's own +Y = up.
-     */
-    inline uint16_t axisUp(int16_t value)
-    {
-        return static_cast<uint16_t>(32767 - value);
-    }
-
-    inline uint16_t axisRight(int16_t value)
-    {
-        return static_cast<uint16_t>(value + 32768);
-    }
-
-    XboxBtReport mapStateXboxBt(const GamepadState &s)
-    {
-        XboxBtReport r;
-        std::memset(&r, 0, sizeof(r));
-
-        r.reportId = 0x01;
-
-        r.leftX  = axisRight(s.stickLeftX);
-        r.leftY  = axisUp(s.stickLeftY);
-        r.rightX = axisRight(s.stickRightX);
-        r.rightY = axisUp(s.stickRightY);
-
-        r.leftTrigger  = s.triggerLeft;
-        r.rightTrigger = s.triggerRight;
-
-        r.hat = gamepad_hat(s.dpadUp, s.dpadDown, s.dpadLeft, s.dpadRight);
-
-        uint16_t b = 0;
-        if (s.a)           b |= XBT_BTN_A;
-        if (s.b)           b |= XBT_BTN_B;
-        if (s.x)           b |= XBT_BTN_X;
-        if (s.y)           b |= XBT_BTN_Y;
-        if (s.bumperLeft)  b |= XBT_BTN_LB;
-        if (s.bumperRight) b |= XBT_BTN_RB;
-        if (s.select)      b |= XBT_BTN_VIEW;
-        if (s.start)       b |= XBT_BTN_MENU;
-        if (s.thumbLeft)   b |= XBT_BTN_LS;
-        if (s.thumbRight)  b |= XBT_BTN_RS;
-        r.buttons = b;
-
-        // s.guide has nowhere to go: neither a button bit nor the Consumer
-        // "Record" usage reaches GameController, so the Xbox button stays
-        // unmapped rather than being reported as something it is not.
 
         return r;
     }
@@ -384,7 +333,7 @@ public:
 
         else if (profile == ProfileXboxBt)
         {
-            XboxBtReport report = mapStateXboxBt(state);
+            XboxBtReport report = makeXboxBtReport(state);
 
             gpb_corehid_send(
                 reinterpret_cast<const uint8_t *>(&report),

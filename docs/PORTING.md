@@ -193,3 +193,39 @@ before driving it. `tools/gc-probe.m` timestamps every event it receives, in
 the same format as the driver's log, so the two logs correlate directly rather
 than by counting lines.
 
+
+### Two readers, one report — and the byte that decides
+
+The button layout was measured against `GameController.framework` and was
+right there. It was still wrong in PlateUp! running under CrossOver: Y
+arrived as X and Menu as RB, so the game could not be paused.
+
+The report has two kinds of reader, and **neither uses the button usages in
+the descriptor**. Both read fixed bit positions:
+
+| Reader | Used by | Reads the buttons |
+|---|---|---|
+| `GameController.framework` | System Settings, Apple-native ports | consecutively: bit *n* is the *n*-th of A, B, X, Y, LB, RB, View, Menu, LS, RS |
+| SDL (`SDL_hidapi_xboxone.c`) | Wine/CrossOver, Steam Input | **depends on the report's length** |
+
+SDL's `HIDAPI_DriverXboxOneBluetooth_HandleStatePacket` picks the button
+layout by size. At exactly 16 bytes it calls `HandleButtons16` — consecutive,
+the same as GameController. Above 16 it calls `HandleButtons`, the layout of
+newer firmware, with gaps (X at `0x08`, Y at `0x10`, LB at `0x40`, View and Menu
+in the second byte). Sticks, triggers and the hat are parsed identically
+either way.
+
+With the Share button the report was 17 bytes, so the two readers disagreed on
+every button except A and B. Dropping the Share byte makes it 16, and then they
+agree. The descriptor is otherwise the real controller's, byte for byte.
+
+A first attempt moved the bits to SDL's gapped positions and declared each one
+individually in the descriptor, on the assumption that GameController reads
+usages. It does not: that attempt fixed SDL and scrambled GameController the
+other way round. The first measurement could not tell the two readings apart —
+consecutive bits with consecutive usages look the same under both — and the
+assumption was made anyway.
+
+`test/xbox_bt/main.cpp` models both readers, and is held to the record: it has
+to reproduce both observed failures — PlateUp's Y-as-X and Menu-as-RB, and
+gc-probe's scrambled list from the gapped attempt — or the model is wrong.
