@@ -139,12 +139,14 @@ they publish. [PORTING.md](docs/PORTING.md) has the details.
 
 ## Known limits
 
-- **Apps built on SDL 3.4 read nothing from the pad** — among them, going by
-  the SDL it ships, the Mac version of Steam. macOS marks every virtual
-  device's connection as "Virtual", and SDL 3.4 takes an Xbox pad that is not
-  on Bluetooth for a wired one, which speaks a different protocol. Games that
-  use macOS's own controller support are not affected, and neither is
-  anything under CrossOver, Steam included.
+- **Steam under CrossOver: yes. Steam for Mac: not yet.** Steam running under
+  CrossOver reads every controller, rumble included, and so do games that use
+  macOS's own controller support. The Mac version of Steam most likely cannot:
+  it ships SDL 3.4, and SDL 3.4 takes an Xbox pad that macOS marks as
+  connected "Virtual" for a wired one, which speaks a different protocol — the
+  same goes for other apps built on it. Xbox 360 controllers have a way round:
+  let Steam for Mac drive the receiver itself, and they work in Steam, though
+  nowhere else.
 - **Steam for Mac takes the Xbox 360 receiver for itself** when it gets
   there first — it has a driver of its own. GamepadBridge opens at login by
   default, so usually it is the one that gets there first. When Steam does,
