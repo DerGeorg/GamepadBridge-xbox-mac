@@ -20,9 +20,11 @@ Signed &amp; notarized · Updates itself · No Homebrew required
 </div>
 
 > Development happens on
-> [gitlab.dergeorg.at](https://gitlab.dergeorg.at/mac/gamepadbridge) — the
-> GitHub repository is a mirror. Issues and merge requests belong on GitLab;
-> releases appear in both places.
+> [gitlab.dergeorg.at](https://gitlab.dergeorg.at/mac/gamepadbridge), and the
+> GitHub repository is a mirror of it. Problems, questions and ideas belong in
+> the [GitHub issues](https://github.com/DerGeorg/GamepadBridge-xbox-mac/issues):
+> the GitLab instance takes no sign-ups from outside. Releases appear in both
+> places.
 
 ---
 
