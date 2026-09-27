@@ -29,13 +29,15 @@ Signed &amp; notarized · Updates itself · No Homebrew required
 ---
 
 If you own an Xbox One controller and the little USB **Xbox Wireless
-Adapter**, macOS is a dead end. It supports Bluetooth controllers only, and
-does not recognise the adapter at all — no driver, no device, nothing. The
+Adapter** — or an Xbox 360 controller and the **Xbox 360 Wireless Receiver
+for Windows** — macOS is a dead end. It supports Bluetooth controllers only,
+and recognises neither receiver — no driver, no device, nothing. The
 controller that works on every other machine you own is simply unusable.
 
-GamepadBridge fixes that. Plug in the adapter, pair the controller, and it
-shows up as a proper game controller: in System Settings, in Steam, in
-emulators, in anything that reads a gamepad.
+GamepadBridge fixes that. Plug in the adapter or the receiver, pair the
+controller, and it shows up as a proper game controller: in System Settings,
+in games, in anything that reads a gamepad. Both receivers work at the same
+time.
 
 <div align="center">
 
@@ -65,23 +67,31 @@ it is 50 lines.
 |  |  |
 |---|---|
 | 🎮 **A real controller** | Face buttons, bumpers, both analog triggers, both sticks, the d-pad, both stick clicks and the Xbox button — recognised as an Xbox pad, not a generic joystick |
-| 👥 **Several at once** | Every controller on the adapter is its own pad, and macOS remembers each one across restarts |
+| 👥 **Several at once** | Every controller is its own pad — Xbox One on the adapter, up to four Xbox 360 on the receiver, all together — and macOS remembers each one across restarts |
 | 📳 **Rumble** | Vibration reaches the controller — from macOS itself and from games under CrossOver |
 | 🖥️ **Lives in the menu bar** | Each controller with its battery level, pairing, quit. No window, no Dock icon |
 | 🔄 **Updates itself** | Signed updates through Sparkle, or `brew upgrade` if you installed that way |
 | 🔒 **Signed and notarized** | Opens without a Gatekeeper detour. No `xattr` incantations |
-| 📦 **Self-contained** | No Homebrew, no dependencies. Fetches the adapter firmware on first launch |
+| 📦 **Self-contained** | No Homebrew, no dependencies. Fetches the adapter's firmware the first time an adapter is plugged in; the Xbox 360 receiver needs none |
 | 🧩 **Guided setup** | macOS needs two permissions and names one of them confusingly; the app walks you through both |
 
 ## Requirements
 
 - **macOS 15** or newer (Apple silicon or Intel)
+One receiver or both:
+
 - **Xbox Wireless Adapter** — VID `0x045e`, PID `0x02e6` (original), `0x02fe`
-  (slim) or `0x091e` (Surface)
-- **A controller**: model 1537, 1697, 1698 (Elite), 1708 or 1797 (Elite 2)
+  (slim) or `0x091e` (Surface) — with an Xbox One controller: model 1537,
+  1697, 1698 (Elite), 1708 or 1797 (Elite 2)
+- **Xbox 360 Wireless Receiver for Windows** — VID `0x045e`, PID `0x0719`
+  (also `0x0291`, `0x02a9`) — with Xbox 360 wireless controllers
 
 A Bluetooth-capable controller paired over Bluetooth does not need any of
-this — macOS handles those itself. This is for the adapter.
+this — macOS handles those itself. This is for the two USB receivers.
+
+Xbox 360 controllers pair with the receiver's own button, then the one on
+top of the controller; there is no way to start that from the Mac. The menu
+explains it.
 
 ## Permissions
 
@@ -102,11 +112,12 @@ permission off as you grant it.
 ## How it works
 
 ```
-Xbox controller ──802.11──▶ Wireless Adapter ──USB──▶ GamepadBridge
-                                                            │
-                                                         CoreHID
-                                                            ▼
-                                        virtual HID gamepad ──▶ your game
+Xbox One controller ──802.11──▶ Wireless Adapter ──USB──┐
+                                                          ├──▶ GamepadBridge
+Xbox 360 controller ──────────▶ Xbox 360 Receiver ──USB──┘         │
+                                                                 CoreHID
+                                                                    ▼
+                                                virtual HID gamepad ──▶ your game
 ```
 
 The adapter does not speak Bluetooth or HID — it runs a private 802.11 link
@@ -115,6 +126,11 @@ protocol was reverse-engineered by **Medusalix** in
 [xow](https://github.com/medusalix/xow) for Linux. GamepadBridge ports that
 stack to macOS and publishes the result as a virtual HID device that the
 system treats like any other controller.
+
+The Xbox 360 receiver is plainer: USB, one interface per controller slot,
+packets as Linux's xpad driver documents them. Its controllers are published
+as the same kind of pad, so a game sees one kind of controller whichever
+receiver it came through.
 
 Two things about macOS made that harder than a port should be, and both fail
 silently: `GameController.framework` deliberately ignores virtual devices, and
@@ -129,10 +145,13 @@ they publish. [PORTING.md](docs/PORTING.md) has the details.
   on Bluetooth for a wired one, which speaks a different protocol. Games that
   use macOS's own controller support are not affected, and neither is
   anything under CrossOver, Steam included.
-- **Xbox 360 wireless controllers** use a receiver of their own, which
-  GamepadBridge does not drive yet. It is next.
-- **Tested with two controllers at once.** More should work the same way;
-  nobody has tried yet.
+- **Steam for Mac takes the Xbox 360 receiver for itself** when it is
+  running as the receiver is plugged in. The menu then says so, and
+  GamepadBridge takes the receiver over as soon as Steam lets go of it.
+- **Behind one USB dock, the Xbox 360 receiver passed input but no
+  commands** — no ring light, no rumble. Plugged into the Mac directly, it
+  works. If your ring keeps spinning, try a port on the Mac itself.
+- **Tested with four controllers at once**: two Xbox One, two Xbox 360.
 
 ## Building it yourself
 

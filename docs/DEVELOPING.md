@@ -187,6 +187,45 @@ Apple explicitly does not guarantee that presenting a virtual device this way
 keeps working across macOS releases.
 
 
+## The Xbox 360 receiver
+
+A second, independent driver (`src/x360/`), for the Xbox 360 Wireless
+Receiver for Windows. Where the adapter is 802.11 and GIP, this one is plain
+USB: one interface per controller slot, one interrupt endpoint each way, and
+packets as Linux's xpad driver documents them.
+
+It runs on a thread and a libusb context of its own. The adapter's driver
+owns libusb's default context, and on macOS two threads transferring on one
+context deadlock.
+
+Three things about it only show on a Mac:
+
+- **It comes up unconfigured.** macOS configures a USB device only for a
+  driver that matches it, and nothing does. The driver sets configuration 1
+  itself — only when it is not set already, since on macOS setting a
+  configuration re-enumerates the device.
+- **Steam for Mac claims it**, with a driver of its own, when it is running
+  as the receiver is plugged in. libusb then says only
+  `LIBUSB_ERROR_ACCESS`; the IO registry says who (`UsbExclusiveOwner`), and
+  the menu repeats it.
+- **Behind one USB dock**, input arrived and every command timed out. Plugged
+  into the Mac directly, the same commands went through.
+
+To see what a receiver sends, with nothing else running that holds it:
+
+```sh
+clang tools/x360-probe.c $(pkg-config --cflags --libs libusb-1.0) \
+      -o /tmp/x360-probe && /tmp/x360-probe
+```
+
+It lists the slots, lights a connected controller's ring, prints every packet
+(input only when it changes) and rumbles on A and B. `test/x360/main.cpp`
+holds packets recorded with it, one input at a time:
+
+```sh
+clang++ -std=c++11 -I src test/x360/main.cpp -o /tmp/x360t && /tmp/x360t
+```
+
 ## What's tested — and what isn't
 
 - ✅ Builds cleanly on **macOS 26.5.1 (arm64)** with AppleClang, libusb 1.0.30
@@ -200,12 +239,16 @@ keeps working across macOS releases.
   inputs were swept individually and checked against what macOS reports, and
   all 21 map correctly; the Xbox button opens the Games app, as a real pad's
   does.
-- ✅ **Two controllers at once**, each its own pad in GameController and in
-  the menu, and each remembered by macOS under its radio address across
-  restarts.
-- ✅ **Rumble** reaches the controller from System Settings > Game
-  Controllers and from Steam running under CrossOver (SDL 2.30). The test
-  holds the report's bytes against what SDL sends a wired pad.
+- ✅ **Four controllers at once** — two Xbox One on the adapter, two Xbox
+  360 on the receiver — each its own pad in GameController and in the menu,
+  and each remembered by macOS: the Xbox One pads under their radio address,
+  the Xbox 360 pads under the identity in their link packet.
+- ✅ **Xbox 360 receiver** `045e:0719`: every input recorded and checked
+  (`test/x360`), the ring lit with the slot, rumble on both motors, power-off
+  on quit.
+- ✅ **Rumble** reaches every controller, Xbox One and Xbox 360, from System
+  Settings > Game Controllers and from Steam running under CrossOver (SDL
+  2.30). The test holds the report's bytes against what SDL sends a wired pad.
 - ❌ **SDL 3.4 reads nothing** — `tools/sdl-probe.c`, with Homebrew's SDL
   3.4.14. macOS gives every virtual HID device `Transport = "Virtual"`: the
   kernel only keeps the transport a device asks for when it is `Privileged`,
