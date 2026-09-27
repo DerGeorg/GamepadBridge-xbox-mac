@@ -40,9 +40,13 @@ private func statusLines() -> [String] {
  */
 private final class StatusLine: NSView {
     // Measured from a standard menu with NSMenu.size: rows are 24 points
-    // high, and a title sits 16 points in from either edge.
+    // high, and a title sits 16 points in from either edge - 14 more on the
+    // left once any item carries a check mark, since the menu then makes
+    // room for the mark in front of every title. A view has to follow that
+    // by itself, or it stays behind while every other line moves.
     static let height: CGFloat = 24
     static let inset: CGFloat = 16
+    static let stateColumn: CGFloat = 14
 
     private static func width(of text: String) -> CGFloat {
         ceil((text as NSString)
@@ -56,10 +60,10 @@ private final class StatusLine: NSView {
 
     private let label = NSTextField(labelWithString: "")
 
-    init(text: String) {
+    init(text: String, indent: CGFloat) {
         super.init(frame: NSRect(x: 0, y: 0,
                                  width: max(StatusLine.width,
-                                            StatusLine.width(of: text)),
+                                            StatusLine.width(of: text)) + indent,
                                  height: StatusLine.height))
         autoresizingMask = [.width]
 
@@ -71,7 +75,7 @@ private final class StatusLine: NSView {
 
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: leadingAnchor,
-                                           constant: StatusLine.inset),
+                                           constant: StatusLine.inset + indent),
             label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor,
                                             constant: -StatusLine.inset),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -86,9 +90,9 @@ private final class StatusLine: NSView {
 
 }
 
-private func statusItem(_ text: String) -> NSMenuItem {
+private func statusItem(_ text: String, indent: CGFloat) -> NSMenuItem {
     let entry = NSMenuItem()
-    entry.view = StatusLine(text: text)
+    entry.view = StatusLine(text: text, indent: indent)
     entry.isEnabled = false
     return entry
 }
@@ -124,6 +128,7 @@ private final class MenuBar: NSObject {
     // The status lines at the top of the menu, and what they show.
     private var lines: [NSMenuItem] = []
     private var shownLines: [String] = []
+    private var shownIndent: CGFloat = 0
 
     /*
      * Sparkle downloads and installs updates itself, and asks on first launch
@@ -252,14 +257,19 @@ private final class MenuBar: NSObject {
 
     // Rebuilt only when something changed, so an open menu does not flicker.
     private func showLines(_ texts: [String]) {
-        guard texts != shownLines, let menu = item.menu else {
+        // "Open at Login" is the only item that can carry a check mark.
+        let indent = openAtLogin.state == .on ? StatusLine.stateColumn : 0
+
+        guard texts != shownLines || indent != shownIndent,
+              let menu = item.menu else {
             return
         }
 
         shownLines = texts
+        shownIndent = indent
 
         lines.forEach(menu.removeItem)
-        lines = texts.map(statusItem)
+        lines = texts.map { statusItem($0, indent: indent) }
 
         for (position, entry) in lines.enumerated() {
             menu.insertItem(entry, at: position)
@@ -362,6 +372,7 @@ private final class MenuBar: NSObject {
         }
 
         updateOpenAtLogin()
+        showLines(statusLines())
     }
 
     @objc private func startPairing() {
