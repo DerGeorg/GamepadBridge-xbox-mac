@@ -339,6 +339,28 @@ namespace
                 return;
             }
 
+            /*
+             * Only the adapter needs Microsoft's firmware, so it is asked for
+             * when one is plugged in - not at launch, where someone with just
+             * an Xbox 360 receiver would be asked about hardware they do not
+             * have, and saying no used to quit the app.
+             */
+            const std::string firmware = Firmware::resolvePath();
+
+            if (!Firmware::isPresent(firmware))
+            {
+                Status::setMessage("Fetching the adapter's firmware…");
+
+                if (!acquireFirmware(firmware))
+                {
+                    Status::setMessage("Xbox Wireless Adapter: no firmware");
+
+                    return;
+                }
+
+                Status::setMessage("");
+            }
+
             std::lock_guard<std::mutex> lock(dongleMutex);
 
             if (quitting)
@@ -451,17 +473,6 @@ int main()
         Log::info("Shutting down...");
 
         return EXIT_SUCCESS;
-    }
-
-    /*
-     * Fetch the firmware before anything else starts: this runs on the main
-     * thread, which is where a dialog is allowed to appear.
-     */
-    const std::string firmware = Firmware::resolvePath();
-
-    if (!Firmware::isPresent(firmware) && !acquireFirmware(firmware))
-    {
-        return EXIT_FAILURE;
     }
 
 #ifdef GAMEPADBRIDGE_MENUBAR

@@ -400,11 +400,24 @@ public func gpb_menubar_stop() {
 }
 
 /*
- * Asked before the firmware is fetched, from main() on the main thread and
- * before app.run(), so NSAlert has an application to attach to.
+ * Asked before the firmware is fetched - when an adapter is plugged in, from
+ * the thread that found it. A dialog belongs on the main thread, so this
+ * hops there and waits for the answer.
  */
 @_cdecl("gpb_confirm_firmware")
 public func gpb_confirm_firmware(_ message: UnsafePointer<CChar>) -> Int32 {
+    if !Thread.isMainThread {
+        let text = String(cString: message)
+
+        return DispatchQueue.main.sync {
+            text.withCString { askForFirmware($0) }
+        }
+    }
+
+    return askForFirmware(message)
+}
+
+private func askForFirmware(_ message: UnsafePointer<CChar>) -> Int32 {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
 
