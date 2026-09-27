@@ -22,10 +22,6 @@ namespace Status
     // Empty once there is nothing to say beyond the controllers themselves.
     void setMessage(const std::string &text);
 
-    // A line from one source that is not a controller - the Xbox 360
-    // receiver being held by another app, say. Empty text removes it.
-    void setNotice(const std::string &source, const std::string &text);
-
     /*
      * Controllers by a key that stays the same while they are connected, so
      * the menu does not renumber the others when one leaves: the adapter's
@@ -40,4 +36,8 @@ namespace Status
     // adapter pairs from the menu, the Xbox 360 receiver only by its button.
     void setAdapterPresent(bool present);
     void setReceiverPresent(bool present);
+
+    // The app holding the Xbox 360 receiver ("Steam"), or empty when nobody
+    // else does. The menu turns it into an entry that explains.
+    void setReceiverOwner(const std::string &name);
 }

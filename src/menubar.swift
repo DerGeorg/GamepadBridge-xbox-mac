@@ -19,7 +19,7 @@ import AppKit
 import Sparkle
 #endif
 
-// The message, any notices and one line per controller - see status_c.h.
+// The message and one line per controller - see status_c.h.
 private func statusLines() -> [String] {
     (0..<Int(gpb_status_line_count())).map { index in
         var buffer = [CChar](repeating: 0, count: 256)
@@ -110,6 +110,16 @@ private final class MenuBar: NSObject {
                                           action: #selector(explainReceiverPairing),
                                           keyEquivalent: "")
 
+    /*
+     * When another app holds the Xbox 360 receiver, nothing behind it can be
+     * listed - not even which controllers are there. An entry says who has
+     * it, and opens what that means and what to do.
+     */
+    private let receiverBusy = NSMenuItem(title: "",
+                                          action: #selector(explainReceiverBusy),
+                                          keyEquivalent: "")
+    private var receiverOwner = ""
+
     // The status lines at the top of the menu, and what they show.
     private var lines: [NSMenuItem] = []
     private var shownLines: [String] = []
@@ -147,7 +157,10 @@ private final class MenuBar: NSObject {
 
         let menu = NSMenu()
 
-        // The status lines go in above this separator, in refresh().
+        // The status lines go in at the very top, in refresh().
+        receiverBusy.target = self
+        receiverBusy.isHidden = true
+        menu.addItem(receiverBusy)
         menu.addItem(.separator())
 
         pairAdapter.target = self
@@ -201,6 +214,7 @@ private final class MenuBar: NSObject {
     private func refresh() {
         showLines(statusLines())
         updatePairing()
+        updateReceiverBusy()
 
         // A filled icon while a controller is attached, an outline otherwise,
         // so the state is readable without opening the menu at all.
@@ -246,6 +260,35 @@ private final class MenuBar: NSObject {
 
         pairReceiver.isHidden = !receiver
         pairReceiver.title = adapter ? "Pair an Xbox 360 Controller…" : "Pair a Controller…"
+    }
+
+    private func updateReceiverBusy() {
+        var buffer = [CChar](repeating: 0, count: 128)
+
+        gpb_status_receiver_owner(&buffer, buffer.count)
+
+        receiverOwner = String(cString: buffer)
+        receiverBusy.isHidden = receiverOwner.isEmpty
+        receiverBusy.title = "Xbox 360 receiver in use by \(receiverOwner)…"
+    }
+
+    @objc private func explainReceiverBusy() {
+        let owner = receiverOwner.isEmpty ? "another app" : receiverOwner
+
+        let alert = NSAlert()
+        alert.messageText = "\(owner) is using the Xbox 360 receiver"
+        alert.informativeText = "\(owner) has taken the receiver for itself, "
+            + "and while it holds it GamepadBridge cannot see anything behind "
+            + "it - not even which controllers are connected. They may still "
+            + "work inside \(owner), but nowhere else.\n\n"
+            + "To use them everywhere, quit \(owner). GamepadBridge takes the "
+            + "receiver over within a couple of seconds, by itself.\n\n"
+            + "Whoever gets to the receiver first keeps it: with GamepadBridge "
+            + "running before \(owner) starts, it stays here."
+        alert.addButton(withTitle: "OK")
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     @objc private func startPairing() {

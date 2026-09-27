@@ -18,7 +18,6 @@ namespace
 {
     std::mutex mutex;
     std::string message;
-    std::map<std::string, std::string> notices;
 
     struct Controller
     {
@@ -30,6 +29,7 @@ namespace
 
     bool adapterPresent = false;
     bool receiverPresent = false;
+    std::string receiverOwner;
 
     void copyOut(const std::string &value, char *buffer, long capacity)
     {
@@ -49,11 +49,6 @@ namespace
         if (!message.empty())
         {
             out.push_back(message);
-        }
-
-        for (const auto &notice : notices)
-        {
-            out.push_back(notice.second);
         }
 
         if (controllers.empty())
@@ -89,19 +84,18 @@ void Status::setMessage(const std::string &text)
     message = text;
 }
 
-void Status::setNotice(const std::string &source, const std::string &text)
+void Status::setReceiverOwner(const std::string &name)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (text.empty())
-    {
-        notices.erase(source);
-    }
+    receiverOwner = name;
+}
 
-    else
-    {
-        notices[source] = text;
-    }
+void gpb_status_receiver_owner(char *buffer, long capacity)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    copyOut(receiverOwner, buffer, capacity);
 }
 
 void Status::controllerConnected(int key, const std::string &label)

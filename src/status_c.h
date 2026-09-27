@@ -15,7 +15,7 @@ extern "C" {
 
 /*
  * Everything the menu shows above its first separator, one line each, in
- * order: the message, any notices, then each connected controller ("Xbox 360
+ * order: the message, then each connected controller ("Xbox 360
  * controller 1", "Controller 2 \u00b7 Battery: full") - or "No controller".
  */
 int  gpb_status_line_count(void);
@@ -26,6 +26,9 @@ int  gpb_status_controller_present(void);
 // 1 while the Xbox Wireless Adapter / the Xbox 360 receiver is in use.
 int  gpb_status_adapter_present(void);
 int  gpb_status_receiver_present(void);
+
+// Which app holds the Xbox 360 receiver, "" when none does.
+void gpb_status_receiver_owner(char *buffer, long capacity);
 
 /*
  * Both are expressed as signals, so the menu drives exactly the same paths as

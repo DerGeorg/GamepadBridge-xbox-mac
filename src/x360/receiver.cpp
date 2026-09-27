@@ -481,7 +481,7 @@ void X360Receiver::reportBusy(const std::string &owner)
 
     if (owner.empty())
     {
-        Status::setNotice("x360", "");
+        Status::setReceiverOwner("");
 
         return;
     }
@@ -491,7 +491,7 @@ void X360Receiver::reportBusy(const std::string &owner)
     Log::info("[x360] The Xbox 360 receiver is in use by %s (%s); trying again "
               "until it is free", name.c_str(), owner.c_str());
 
-    Status::setNotice("x360", "Xbox 360 receiver in use by " + name);
+    Status::setReceiverOwner(name);
 }
 
 void X360Receiver::post(std::function<void()> task)
