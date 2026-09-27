@@ -263,10 +263,28 @@ int main(void)
 
     struct libusb_config_descriptor *config = NULL;
 
-    if (libusb_get_active_config_descriptor(libusb_get_device(handle), &config))
+    if (libusb_get_config_descriptor(libusb_get_device(handle), 0, &config))
     {
         printf("no configuration descriptor\n");
         return 1;
+    }
+
+    /*
+     * Freshly plugged in and with no driver of its own, the receiver sits
+     * unconfigured - macOS configures a device only for a driver that
+     * matches it. Steam, when it runs, is that driver. Only set it when it
+     * is not set already: on macOS setting a configuration re-enumerates the
+     * device even when nothing changes.
+     */
+    int active = -1;
+    libusb_get_configuration(handle, &active);
+
+    if (active != config->bConfigurationValue)
+    {
+        int error = libusb_set_configuration(handle, config->bConfigurationValue);
+
+        printf("configuration %d -> %d: %s\n", active, config->bConfigurationValue,
+               error ? libusb_error_name(error) : "ok");
     }
 
     /*
