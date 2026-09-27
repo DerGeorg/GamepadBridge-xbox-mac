@@ -64,7 +64,7 @@ it is 50 lines.
 |---|---|
 | 🎮 **A real controller** | Face buttons, bumpers, both analog triggers, both sticks, the d-pad, both stick clicks and the Xbox button — recognised as an Xbox pad, not a generic joystick |
 | 👥 **Several at once** | Every controller on the adapter is its own pad, and macOS remembers each one across restarts |
-| 📳 **Rumble** | Vibration requests reach the controller — tried from macOS's own controller settings |
+| 📳 **Rumble** | Vibration reaches the controller — from macOS itself and from games under CrossOver |
 | 🖥️ **Lives in the menu bar** | Each controller with its battery level, pairing, quit. No window, no Dock icon |
 | 🔄 **Updates itself** | Signed updates through Sparkle, or `brew upgrade` if you installed that way |
 | 🔒 **Signed and notarized** | Opens without a Gatekeeper detour. No `xattr` incantations |
@@ -121,6 +121,12 @@ they publish. [PORTING.md](docs/PORTING.md) has the details.
 
 ## Known limits
 
+- **Apps built on SDL 3.4 read nothing from the pad** — among them, going by
+  the SDL it ships, the Mac version of Steam. macOS marks every virtual
+  device's connection as "Virtual", and SDL 3.4 takes an Xbox pad that is not
+  on Bluetooth for a wired one, which speaks a different protocol. Games that
+  use macOS's own controller support are not affected, and neither is
+  anything under CrossOver, Steam included.
 - **Xbox 360 wireless controllers** use a receiver of their own, which
   GamepadBridge does not drive yet. It is next.
 - **Tested with two controllers at once.** More should work the same way;

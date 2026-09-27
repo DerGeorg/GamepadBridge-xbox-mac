@@ -203,9 +203,17 @@ keeps working across macOS releases.
 - ✅ **Two controllers at once**, each its own pad in GameController and in
   the menu, and each remembered by macOS under its radio address across
   restarts.
-- ✅ **Rumble** from System Settings > Game Controllers reaches the
-  controller. Games using SDL send the same report; the test holds its bytes
-  against what SDL sends a wired pad.
+- ✅ **Rumble** reaches the controller from System Settings > Game
+  Controllers and from Steam running under CrossOver (SDL 2.30). The test
+  holds the report's bytes against what SDL sends a wired pad.
+- ❌ **SDL 3.4 reads nothing** — `tools/sdl-probe.c`, with Homebrew's SDL
+  3.4.14. macOS gives every virtual HID device `Transport = "Virtual"`: the
+  kernel only keeps the transport a device asks for when it is `Privileged`,
+  which takes a private Apple entitlement (`IOHIDUserDevice::newTransportString`
+  in IOHIDFamily). SDL 3.4 decides Bluetooth from that property alone, so its
+  GIP driver for wired pads claims ours, sends a wired pad's power-on and
+  cannot parse a single report. SDL 2.30, which CrossOver ships, decides by
+  product ID and reads the pad as the Bluetooth one it claims to be.
 - ✅ **Verified in an actual game** (Unrailed) on macOS 27.
 
 ## Releasing
