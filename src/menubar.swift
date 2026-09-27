@@ -114,13 +114,23 @@ private final class MenuBar: NSObject {
         quit.target = self
         menu.addItem(quit)
 
+        menu.delegate = self
         item.menu = menu
 
         refresh()
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) {
+        /*
+         * In the common modes, not the default one: while a menu is open the
+         * run loop tracks it in a mode of its own, and a timer scheduled the
+         * usual way stands still - the open menu kept showing whatever was
+         * true when it was opened, however many controllers came and went.
+         */
+        let ticker = Timer(timeInterval: 1.0, repeats: true) {
             [weak self] _ in self?.refresh()
         }
+
+        RunLoop.main.add(ticker, forMode: .common)
+        timer = ticker
     }
 
     private func refresh() {
@@ -242,6 +252,13 @@ private final class MenuBar: NSObject {
         }
     }
 #endif
+}
+
+// Up to date the moment it opens, rather than up to a second behind.
+extension MenuBar: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        refresh()
+    }
 }
 
 nonisolated(unsafe) private var menuBar: MenuBar?
