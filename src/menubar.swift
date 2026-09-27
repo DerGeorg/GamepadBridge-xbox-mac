@@ -43,8 +43,11 @@ private final class MenuBar: NSObject {
 
     private let connection = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
-    // One per connected controller, directly below `connection`.
+    // One per connected controller, directly below `connection`, and the
+    // lines they show - their titles carry padding, so they cannot be
+    // compared with the next lines directly.
     private var controllers: [NSMenuItem] = []
+    private var shownLines: [String] = []
 
     /*
      * Sparkle downloads and installs updates itself, and asks on first launch
@@ -115,7 +118,6 @@ private final class MenuBar: NSObject {
         menu.addItem(quit)
 
         menu.delegate = self
-        menu.minimumWidth = MenuBar.widthFor(MenuBar.longestLines)
         item.menu = menu
 
         refresh()
@@ -135,42 +137,37 @@ private final class MenuBar: NSObject {
     }
 
     /*
-     * An open menu takes its width once, when it opens: a line that grows
-     * afterwards is cut off with an ellipsis, not given room. So it opens
-     * wide enough for the longest line it can come to show — a controller
-     * connecting and reporting its battery while it is open included.
+     * An open menu lays out its text column once, from the widest title it
+     * has when it opens, and cuts off anything that grows past that later —
+     * a controller connecting while the menu is open, and then reporting its
+     * battery, came out as "Controller…ry: medium". A wider menu does not
+     * help; the column stays. So the lines that change are padded with figure
+     * spaces, which nobody sees, to the longest a controller line can become.
      */
-    private static let longestLines = [
-        "Controller 16 \u{00b7} Battery: medium",
-        "Virtual gamepad refused - permissions missing",
-    ]
+    private static let longestLine = "Controller 16 \u{00b7} Battery: medium"
 
-    private static func widthFor(_ lines: [String]) -> CGFloat {
-        let font = NSFont.menuFont(ofSize: 0)
+    private static func width(_ text: String) -> CGFloat {
+        (text as NSString).size(
+            withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
+    }
 
-        let widest = lines.map {
-            ($0 as NSString).size(withAttributes: [.font: font]).width
-        }.max() ?? 0
+    private static func padded(_ text: String) -> String {
+        let space = "\u{2007}"
+        let missing = width(longestLine) - width(text)
 
-        // Room for the check mark column on the left and the margin on the
-        // right, which the title's own width does not include.
-        return ceil(widest) + 48
+        guard missing > 0, !text.isEmpty else { return text }
+
+        return text + String(repeating: space,
+                             count: Int(ceil(missing / width(space))))
     }
 
     private func refresh() {
         let headline = connectionText()
-        let lines = controllerLines()
 
-        connection.title = headline
+        connection.title = MenuBar.padded(headline)
         connection.isHidden = headline.isEmpty
 
-        showControllers(lines)
-
-        // A line nobody thought of: at least the next opening fits it.
-        if let menu = item.menu {
-            menu.minimumWidth = max(menu.minimumWidth,
-                                    MenuBar.widthFor(lines + [headline]))
-        }
+        showControllers(controllerLines())
 
         // A filled icon while a controller is attached, an outline otherwise,
         // so the state is readable without opening the menu at all.
@@ -192,14 +189,17 @@ private final class MenuBar: NSObject {
 
     // Rebuilt only when something changed, so an open menu does not flicker.
     private func showControllers(_ lines: [String]) {
-        guard lines != controllers.map(\.title), let menu = item.menu else {
+        guard lines != shownLines, let menu = item.menu else {
             return
         }
+
+        shownLines = lines
 
         controllers.forEach(menu.removeItem)
 
         controllers = lines.map { line in
-            let entry = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            let entry = NSMenuItem(title: MenuBar.padded(line), action: nil,
+                                   keyEquivalent: "")
             entry.isEnabled = false
             return entry
         }
