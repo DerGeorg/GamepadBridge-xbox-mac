@@ -135,7 +135,15 @@ static void light(libusb_device_handle *handle, const struct Slot *slot,
 
 static void process(struct Slot *slot, const unsigned char *data, int length)
 {
-    slot->packets++;
+    /*
+     * The presence packet only comes when a controller connects, so a pad
+     * that was on before the probe started never sends one. Light its ring
+     * on the first packet instead, so the command gets tried either way.
+     */
+    if (slot->packets++ == 0 && !(data[0] & 0x08))
+    {
+        light(handle, slot, slot->number - 1);
+    }
 
     /* Presence: bit 3 of the first byte, then 0x80 = controller. */
     if ((data[0] & 0x08) && length >= 2)
