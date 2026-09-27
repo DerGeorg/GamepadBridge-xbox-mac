@@ -176,10 +176,12 @@ macOS doesn't use produces no event at all, so counting lines quietly shifts
 everything after it and turns one wrong bit into a plausible-looking wrong
 answer.
 
-Everything maps except the **Xbox/Guide button**: this profile doesn't carry it
-in the gamepad report, and the Consumer "Record" usage the descriptor also
-declares never reaches GameController either. It is left unmapped rather than
-reported as something it isn't.
+The **Xbox button** is not in the gamepad report at all. At 16 bytes the
+profile has no slot for it, so it goes in a report of its own, report 2 — the
+one place SDL reads it from, and macOS takes it from there too: pressed, it
+opens the Games app like a real pad. `gc-probe watch` lists whether the pad
+has a Home button but does not see the press, because the system keeps it.
+`GAMEPADBRIDGE_GUIDE=off` publishes the descriptor without it, for bisecting.
 
 Apple explicitly does not guarantee that presenting a virtual device this way
 keeps working across macOS releases.
@@ -195,9 +197,15 @@ keeps working across macOS releases.
   and stream continuously. Clean shutdown including controller power-off.
 - ✅ Runs **without `sudo`**.
 - ✅ Visible to both the raw-HID path and `GameController.framework`. All 21
-  inputs were swept individually and checked against what macOS reports: 20
-  map correctly, the Xbox button being the exception the profile has no bit
-  for.
+  inputs were swept individually and checked against what macOS reports, and
+  all 21 map correctly; the Xbox button opens the Games app, as a real pad's
+  does.
+- ✅ **Two controllers at once**, each its own pad in GameController and in
+  the menu, and each remembered by macOS under its radio address across
+  restarts.
+- ✅ **Rumble** from System Settings > Game Controllers reaches the
+  controller. Games using SDL send the same report; the test holds its bytes
+  against what SDL sends a wired pad.
 - ✅ **Verified in an actual game** (Unrailed) on macOS 27.
 
 ## Releasing

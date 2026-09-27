@@ -62,8 +62,10 @@ it is 50 lines.
 
 |  |  |
 |---|---|
-| 🎮 **A real controller** | Face buttons, bumpers, both analog triggers, both sticks, the d-pad and both stick clicks — recognised as an Xbox pad, not a generic joystick |
-| 🖥️ **Lives in the menu bar** | Connection state, battery level, pairing, quit. No window, no Dock icon |
+| 🎮 **A real controller** | Face buttons, bumpers, both analog triggers, both sticks, the d-pad, both stick clicks and the Xbox button — recognised as an Xbox pad, not a generic joystick |
+| 👥 **Several at once** | Every controller on the adapter is its own pad, and macOS remembers each one across restarts |
+| 📳 **Rumble** | Vibration from games reaches the controller — through macOS, Steam and CrossOver alike |
+| 🖥️ **Lives in the menu bar** | Each controller with its battery level, pairing, quit. No window, no Dock icon |
 | 🔄 **Updates itself** | Signed updates through Sparkle, or `brew upgrade` if you installed that way |
 | 🔒 **Signed and notarized** | Opens without a Gatekeeper detour. No `xattr` incantations |
 | 📦 **Self-contained** | No Homebrew, no dependencies. Fetches the adapter firmware on first launch |
@@ -119,10 +121,10 @@ they publish. [PORTING.md](docs/PORTING.md) has the details.
 
 ## Known limits
 
-- **The Xbox button does nothing.** The Bluetooth profile macOS expects
-  simply has no bit for it.
-- **One controller at a time**, though the adapter supports four.
-- **No rumble yet.** The protocol side exists; the plumbing does not.
+- **Xbox 360 wireless controllers** use a receiver of their own, which
+  GamepadBridge does not drive yet. It is next.
+- **Tested with two controllers at once.** More should work the same way;
+  nobody has tried yet.
 
 ## Building it yourself
 

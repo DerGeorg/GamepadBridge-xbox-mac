@@ -103,10 +103,6 @@ Notes / still open:
 
 - Optional `output_cgevent.cpp`: keyboard/mouse fallback needing no Apple
   entitlements — useful for anyone without a paid membership.
-- Notarised Developer ID build so others can install it without their own
-  Apple account.
-- Rumble (host → controller): `GipDevice::performRumble` already exists; wire
-  a backend `RumbleCallback` to it for force feedback.
 
 ## Stage 2: publishing a virtual gamepad
 

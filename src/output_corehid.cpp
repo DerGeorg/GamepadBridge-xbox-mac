@@ -28,6 +28,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -75,12 +76,9 @@ namespace
      *   GAMEPADBRIDGE_TRANSPORT=usb|bluetooth|ble|virtual|none
      *   GAMEPADBRIDGE_MINIMAL_HID=1   textbook-minimal descriptor instead of
      *                                 our full Xbox layout (descriptor bisect)
-     *   GAMEPADBRIDGE_GUIDE=<route>   where the Xbox button goes — still an
-     *                                 experiment, so off unless asked for:
-     *        report     its own input report 2, which is where SDL reads it
-     *                   (adds the report to the descriptor)
-     *        bit10..15  that bit of the buttons in report 1, in case
-     *                   GameController reads it from there
+     *   GAMEPADBRIDGE_GUIDE=off       leave the Xbox button's report out of
+     *                                 the descriptor: the layout up to 1.0.7,
+     *                                 for bisecting
      */
     #define ENV_MINIMAL_HID "GAMEPADBRIDGE_MINIMAL_HID"
     #define ENV_IDS         "GAMEPADBRIDGE_IDS"
@@ -284,26 +282,19 @@ public:
 
         else if (profile == ProfileXboxBt)
         {
-            descriptor = kXboxBtReportDescriptor;
-            descriptorLength = sizeof(kXboxBtReportDescriptor);
             shape = "xbox-bt";
 
-            chooseGuideRoute();
+            const char *guide = std::getenv(ENV_GUIDE);
 
-            if (guideRoute == GuideReport)
+            withGuide = !(guide && std::string(guide) == "off");
+            xboxDescriptor = makeXboxBtDescriptor(withGuide);
+
+            descriptor = xboxDescriptor.data();
+            descriptorLength = xboxDescriptor.size();
+
+            if (!withGuide)
             {
-                // Declared inside the game pad collection: in front of the
-                // descriptor's last byte, its final End Collection.
-                withGuide.assign(kXboxBtReportDescriptor,
-                                 kXboxBtReportDescriptor
-                                     + sizeof(kXboxBtReportDescriptor) - 1);
-                withGuide.insert(withGuide.end(), kXboxBtGuideItems,
-                                 kXboxBtGuideItems + sizeof(kXboxBtGuideItems));
-                withGuide.push_back(0xC0);
-
-                descriptor = withGuide.data();
-                descriptorLength = withGuide.size();
-                shape = "xbox-bt+guide-report";
+                shape = "xbox-bt without the Xbox button";
             }
         }
 
@@ -390,19 +381,14 @@ public:
         {
             XboxBtReport report = makeXboxBtReport(state);
 
-            if (guideRoute == GuideBit && state.guide)
-            {
-                report.buttons |= static_cast<uint16_t>(1u << guideBit);
-            }
-
             gpb_corehid_send(
                 pad,
                 reinterpret_cast<const uint8_t *>(&report),
                 static_cast<long>(sizeof(report)));
 
             // Only on a change, like a real pad: SDL treats every report 2
-            // as a press or release.
-            if (guideRoute == GuideReport && state.guide != guideDown)
+            // as a press or a release.
+            if (withGuide && state.guide != guideDown)
             {
                 guideDown = state.guide;
 
@@ -442,48 +428,6 @@ public:
     }
 
 private:
-    enum GuideRoute { GuideNone, GuideReport, GuideBit };
-
-    void chooseGuideRoute()
-    {
-        const char *route = std::getenv(ENV_GUIDE);
-
-        if (!route || !*route)
-        {
-            return;
-        }
-
-        std::string value(route);
-
-        if (value == "report")
-        {
-            guideRoute = GuideReport;
-        }
-
-        else if (value.size() >= 4 && value.compare(0, 3, "bit") == 0)
-        {
-            int bit = std::atoi(value.c_str() + 3);
-
-            // Bits 0-9 are the other buttons.
-            if (bit >= 10 && bit <= 15)
-            {
-                guideRoute = GuideBit;
-                guideBit = bit;
-            }
-        }
-
-        if (guideRoute == GuideNone)
-        {
-            Log::error("[corehid] Unknown " ENV_GUIDE " '%s' - use report or "
-                       "bit10..bit15", route);
-        }
-
-        else
-        {
-            Log::info("[corehid] Xbox button: %s", route);
-        }
-    }
-
     /*
      * An output report from a game, on CoreHID's thread. The only one this
      * profile declares is rumble; it is parsed here and handed on, and the
@@ -508,9 +452,18 @@ private:
             // else than expected, without flooding the log at 60 Hz.
             if (!self->reportedOther.exchange(true))
             {
+                std::string bytes;
+                char hex[4];
+
+                for (long i = 0; i < length && i < 64; i++)
+                {
+                    snprintf(hex, sizeof(hex), "%02x ", data[i]);
+                    bytes += hex;
+                }
+
                 Log::info("[corehid] %s: ignoring output report %02x, %ld "
-                          "bytes, starting %02x", self->serial.c_str(),
-                          reportId, length, data[0]);
+                          "bytes: %s", self->serial.c_str(), reportId,
+                          length, bytes.c_str());
             }
 
             return;
@@ -546,10 +499,9 @@ private:
     std::atomic<bool> reportedRumble{false};
     std::atomic<bool> reportedOther{false};
 
-    GuideRoute guideRoute = GuideNone;
-    int guideBit = 0;
+    bool withGuide = false;
     bool guideDown = false;
-    std::vector<uint8_t> withGuide;
+    std::vector<uint8_t> xboxDescriptor;
 };
 
 std::unique_ptr<OutputDevice> makeOutputDevice()

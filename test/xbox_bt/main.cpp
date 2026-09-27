@@ -257,19 +257,17 @@ int main()
     }
 
     /*
-     * The descriptor, with and without the Xbox button's report — the second
-     * is assembled exactly as output_corehid.cpp does it.
+     * The descriptor as published, and the plain dump it is built from —
+     * both from makeXboxBtDescriptor(), which output_corehid.cpp calls too.
      */
     printf("\ndescriptor:\n");
 
-    const std::vector<uint8_t> base(
-        kXboxBtReportDescriptor,
-        kXboxBtReportDescriptor + sizeof(kXboxBtReportDescriptor));
+    const std::vector<uint8_t> base = makeXboxBtDescriptor(false);
+    const std::vector<uint8_t> guided = makeXboxBtDescriptor();
 
-    std::vector<uint8_t> guided(base.begin(), base.end() - 1);
-    guided.insert(guided.end(), kXboxBtGuideItems,
-                  kXboxBtGuideItems + sizeof(kXboxBtGuideItems));
-    guided.push_back(0xC0);
+    expect(base.size() == sizeof(kXboxBtReportDescriptor)
+           && guided.size() == base.size() + sizeof(kXboxBtGuideItems),
+           "published = the dump plus the Xbox button's items, nothing else");
 
     Layout plain = walk(base), withGuide = walk(guided);
 
@@ -280,7 +278,7 @@ int main()
     expect(plain.outputBits[3] == 8 * 8,
            "report 3 (rumble) declares the 8 bytes parseXboxBtRumble reads");
     expect(withGuide.balanced && withGuide.topLevel == 1,
-           "with the Xbox button: still one collection, still closed");
+           "as published: still one collection, still closed");
     expect(withGuide.inputBits[2] == 8 * (int(sizeof(XboxBtGuideReport)) - 1)
            && withGuide.inputBits[1] == plain.inputBits[1]
            && withGuide.outputBits[3] == plain.outputBits[3],

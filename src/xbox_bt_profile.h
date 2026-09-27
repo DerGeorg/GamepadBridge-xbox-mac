@@ -24,6 +24,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <vector>
+
 static const uint8_t kXboxBtReportDescriptor[] =
 {
     0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x01,
@@ -103,8 +105,8 @@ typedef struct __attribute__((packed))
  * way round. Dropping the Share byte makes the report 16 bytes, and then both
  * readers agree.
  *
- * There is no Guide bit yet. Where macOS wants it is still an experiment — see
- * GAMEPADBRIDGE_GUIDE in output_corehid.cpp and the guide report below.
+ * The Xbox button is not in this report. macOS and SDL both read it from a
+ * report of its own — see XboxBtGuideReport below.
  */
 enum XboxBtButton
 {
@@ -222,15 +224,16 @@ inline bool parseXboxBtRumble(uint8_t reportId, const uint8_t *data,
 }
 
 /*
- * Input report 0x02 — the Xbox button on its own, for the experiment behind
- * GAMEPADBRIDGE_GUIDE=report.
+ * Input report 0x02 — the Xbox button, on its own.
  *
- * SDL reads a 16-byte pad's Xbox button from here and nowhere else
- * (HIDAPI_DriverXboxOneBluetooth_HandleGuidePacket: data[1] & 0x01). The
- * profile's descriptor has no report 2, so it has to be declared before it can
- * be sent: kXboxBtGuideItems goes in front of the descriptor's final End
- * Collection, inside the game pad rather than beside it, so the device still
- * has one top-level collection and is still classified as a game pad.
+ * Both readers take it from here. macOS: pressed, it opens the Games app,
+ * exactly as with a real pad (measured, 1.1.0). SDL, and with it Steam and
+ * CrossOver: HIDAPI_DriverXboxOneBluetooth_HandleGuidePacket reads a 16-byte
+ * pad's Xbox button from report 2 and nowhere else (data[1] & 0x01).
+ *
+ * The descriptor dumped from the real controller has no report 2 — that
+ * firmware sends the button inside report 1, in a slot that only exists at
+ * 17 bytes — so it is declared here and added by makeXboxBtDescriptor().
  */
 static const uint8_t kXboxBtGuideItems[] =
 {
@@ -252,3 +255,31 @@ typedef struct __attribute__((packed))
     uint8_t reportId;   // always 2
     uint8_t pressed;    // bit 0
 } XboxBtGuideReport;
+
+/*
+ * The descriptor the pad is published with. The Xbox button's items go in
+ * front of the last byte, the final End Collection: inside the game pad
+ * rather than beside it, so the device keeps one top-level collection and is
+ * still classified as a game pad.
+ *
+ * withGuide = false gives the plain dump, the layout up to 1.0.7 — only for
+ * bisecting (GAMEPADBRIDGE_GUIDE=off).
+ */
+inline std::vector<uint8_t> makeXboxBtDescriptor(bool withGuide = true)
+{
+    const uint8_t *begin = kXboxBtReportDescriptor;
+    const uint8_t *end = begin + sizeof(kXboxBtReportDescriptor);
+
+    if (!withGuide)
+    {
+        return std::vector<uint8_t>(begin, end);
+    }
+
+    std::vector<uint8_t> descriptor(begin, end - 1);
+
+    descriptor.insert(descriptor.end(), kXboxBtGuideItems,
+                      kXboxBtGuideItems + sizeof(kXboxBtGuideItems));
+    descriptor.push_back(0xC0);
+
+    return descriptor;
+}
