@@ -13,14 +13,13 @@
 extern "C" {
 #endif
 
-// The headline: the message if there is one, "No controller" if there are
-// none, and empty (nothing to show) while controllers speak for themselves.
-void gpb_status_connection(char *buffer, long capacity);
-
-// One line per connected controller, in number order: "Controller 1 ·
-// Battery: full". `index` counts from 0 up to gpb_status_controller_count().
-int  gpb_status_controller_count(void);
-void gpb_status_controller(int index, char *buffer, long capacity);
+/*
+ * Everything the menu shows above its first separator, one line each, in
+ * order: the message, any notices, then each connected controller ("Xbox 360
+ * controller 1", "Controller 2 \u00b7 Battery: full") - or "No controller".
+ */
+int  gpb_status_line_count(void);
+void gpb_status_line(int index, char *buffer, long capacity);
 
 int  gpb_status_controller_present(void);
 

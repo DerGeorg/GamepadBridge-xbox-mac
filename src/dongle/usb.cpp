@@ -368,8 +368,8 @@ std::unique_ptr<UsbDevice> UsbDeviceManager::getDevice(
 
     Log::info("Waiting for device...");
 
-    // Handle events until device is plugged in
-    while (!device)
+    // Handle events until device is plugged in, or until stop() wakes us.
+    while (!device && !stopping)
     {
         int error = libusb_handle_events_completed(nullptr, nullptr);
 
@@ -385,11 +385,23 @@ std::unique_ptr<UsbDevice> UsbDeviceManager::getDevice(
         libusb_hotplug_deregister_callback(nullptr, handle);
     }
 
+    if (!device)
+    {
+        return nullptr;
+    }
+
     // Pass ownership of device to caller
     return std::unique_ptr<UsbDevice>(new UsbDevice(
         device,
         terminate
     ));
+}
+
+void UsbDeviceManager::stop()
+{
+    stopping = true;
+
+    libusb_interrupt_event_handler(nullptr);
 }
 
 int UsbDeviceManager::hotplugCallback(

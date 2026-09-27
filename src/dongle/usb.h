@@ -122,12 +122,19 @@ public:
     UsbDeviceManager();
     ~UsbDeviceManager();
 
+    // Waits until one of `ids` is plugged in, or until stop() is called -
+    // then it returns nullptr.
     std::unique_ptr<UsbDevice> getDevice(
         std::initializer_list<HardwareId> ids,
         UsbDevice::Terminate terminate
     );
 
+    // Ends a getDevice() waiting on another thread. Safe from any thread.
+    void stop();
+
 private:
+    std::atomic<bool> stopping{false};
+
     static int hotplugCallback(
         libusb_context *context,
         libusb_device *device,

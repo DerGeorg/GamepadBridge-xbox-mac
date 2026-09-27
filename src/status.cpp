@@ -9,18 +9,24 @@
 #include <atomic>
 #include <csignal>
 #include <cstring>
-#include <iterator>
 #include <map>
 #include <mutex>
+#include <vector>
 #include <unistd.h>
 
 namespace
 {
     std::mutex mutex;
-    std::string message = "Waiting for adapter";
+    std::string message;
+    std::map<std::string, std::string> notices;
 
-    // Number -> battery level ("" until the controller reports one).
-    std::map<int, std::string> controllers;
+    struct Controller
+    {
+        std::string label;
+        std::string battery;   // "" until the controller reports one
+    };
+
+    std::map<int, Controller> controllers;
 
     void copyOut(const std::string &value, char *buffer, long capacity)
     {
@@ -31,6 +37,46 @@ namespace
 
         strlcpy(buffer, value.c_str(), static_cast<size_t>(capacity));
     }
+
+    // Built on demand under the lock; a handful of lines, once a second.
+    std::vector<std::string> lines()
+    {
+        std::vector<std::string> out;
+
+        if (!message.empty())
+        {
+            out.push_back(message);
+        }
+
+        for (const auto &notice : notices)
+        {
+            out.push_back(notice.second);
+        }
+
+        if (controllers.empty())
+        {
+            if (message.empty())
+            {
+                out.push_back("No controller");
+            }
+
+            return out;
+        }
+
+        for (const auto &entry : controllers)
+        {
+            std::string line = entry.second.label;
+
+            if (!entry.second.battery.empty())
+            {
+                line += " \u00b7 Battery: " + entry.second.battery;
+            }
+
+            out.push_back(line);
+        }
+
+        return out;
+    }
 }
 
 void Status::setMessage(const std::string &text)
@@ -40,77 +86,64 @@ void Status::setMessage(const std::string &text)
     message = text;
 }
 
-void Status::controllerConnected(int number)
+void Status::setNotice(const std::string &source, const std::string &text)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    controllers[number] = "";
+    if (text.empty())
+    {
+        notices.erase(source);
+    }
+
+    else
+    {
+        notices[source] = text;
+    }
 }
 
-void Status::controllerDisconnected(int number)
+void Status::controllerConnected(int key, const std::string &label)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    controllers.erase(number);
+    controllers[key] = Controller{ label, "" };
 }
 
-void Status::setBattery(int number, const std::string &level)
+void Status::controllerDisconnected(int key)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    controllers.erase(key);
+}
+
+void Status::setBattery(int key, const std::string &level)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     // A late report from a controller that has just left must not bring
     // its line back.
-    auto controller = controllers.find(number);
+    auto controller = controllers.find(key);
 
     if (controller != controllers.end())
     {
-        controller->second = level;
+        controller->second.battery = level;
     }
 }
 
-void gpb_status_connection(char *buffer, long capacity)
+int gpb_status_line_count(void)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (!message.empty())
-    {
-        copyOut(message, buffer, capacity);
-    }
-
-    else
-    {
-        copyOut(controllers.empty() ? "No controller" : "", buffer, capacity);
-    }
+    return static_cast<int>(lines().size());
 }
 
-int gpb_status_controller_count(void)
+void gpb_status_line(int index, char *buffer, long capacity)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    return static_cast<int>(controllers.size());
-}
+    const std::vector<std::string> all = lines();
 
-void gpb_status_controller(int index, char *buffer, long capacity)
-{
-    std::lock_guard<std::mutex> lock(mutex);
-
-    if (index < 0 || index >= static_cast<int>(controllers.size()))
-    {
-        copyOut("", buffer, capacity);
-
-        return;
-    }
-
-    auto controller = std::next(controllers.begin(), index);
-
-    std::string line = "Controller " + std::to_string(controller->first);
-
-    if (!controller->second.empty())
-    {
-        line += " \u00b7 Battery: " + controller->second;
-    }
-
-    copyOut(line, buffer, capacity);
+    copyOut(index >= 0 && index < static_cast<int>(all.size()) ? all[index] : "",
+            buffer, capacity);
 }
 
 int gpb_status_controller_present(void)

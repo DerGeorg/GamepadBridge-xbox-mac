@@ -118,6 +118,7 @@ set(CORE_SOURCES
     src/dongle/dongle.cpp
     src/controller/gip.cpp
     src/controller/controller.cpp
+    src/x360/receiver.cpp
     src/utils/log.cpp
     src/status.cpp
     src/firmware.cpp
@@ -129,7 +130,16 @@ set(CORE_SOURCES
 # the menu bar branch, which left the console build failing to link
 # (AXIsProcessTrusted undefined) without the app build noticing.
 find_library(APPSERVICES_FRAMEWORK ApplicationServices REQUIRED)
-set(BACKEND_FRAMEWORKS ${APPSERVICES_FRAMEWORK})
+
+# x360/receiver.cpp reads from the IO registry which app holds the Xbox 360
+# receiver, so every build needs IOKit and CoreFoundation too.
+find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
+find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+
+set(BACKEND_FRAMEWORKS
+    ${APPSERVICES_FRAMEWORK}
+    ${IOKIT_FRAMEWORK}
+    ${COREFOUNDATION_FRAMEWORK})
 
 if(XOW_BACKEND STREQUAL "console")
     list(APPEND CORE_SOURCES src/output_console.cpp)

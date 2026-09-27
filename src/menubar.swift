@@ -19,19 +19,12 @@ import AppKit
 import Sparkle
 #endif
 
-private func connectionText() -> String {
-    var buffer = [CChar](repeating: 0, count: 256)
-
-    gpb_status_connection(&buffer, buffer.count)
-
-    return String(cString: buffer)
-}
-
-private func controllerLines() -> [String] {
-    (0..<Int(gpb_status_controller_count())).map { index in
+// The message, any notices and one line per controller - see status_c.h.
+private func statusLines() -> [String] {
+    (0..<Int(gpb_status_line_count())).map { index in
         var buffer = [CChar](repeating: 0, count: 256)
 
-        gpb_status_controller(Int32(index), &buffer, buffer.count)
+        gpb_status_line(Int32(index), &buffer, buffer.count)
 
         return String(cString: buffer)
     }
@@ -50,16 +43,22 @@ private final class StatusLine: NSView {
     static let height: CGFloat = 24
     static let inset: CGFloat = 16
 
-    // Wide enough for the longest a controller line can become.
-    static let width = ceil(("Controller 16 \u{00b7} Battery: medium" as NSString)
-        .size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width)
-        + 2 * inset
+    private static func width(of text: String) -> CGFloat {
+        ceil((text as NSString)
+            .size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width)
+            + 2 * inset
+    }
+
+    // Wide enough for the longest a controller line can become, and for its
+    // own text when that is longer still - a notice, say.
+    static let width = width(of: "Controller 16 \u{00b7} Battery: medium")
 
     private let label = NSTextField(labelWithString: "")
 
-    init() {
+    init(text: String) {
         super.init(frame: NSRect(x: 0, y: 0,
-                                 width: StatusLine.width,
+                                 width: max(StatusLine.width,
+                                            StatusLine.width(of: text)),
                                  height: StatusLine.height))
         autoresizingMask = [.width]
 
@@ -76,35 +75,29 @@ private final class StatusLine: NSView {
                                             constant: -StatusLine.inset),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+
+        label.stringValue = text
     }
 
     required init?(coder: NSCoder) {
         fatalError("not used from a nib")
     }
 
-    var text: String {
-        get { label.stringValue }
-        set { label.stringValue = newValue }
-    }
 }
 
-private func statusItem() -> (NSMenuItem, StatusLine) {
-    let line = StatusLine()
+private func statusItem(_ text: String) -> NSMenuItem {
     let entry = NSMenuItem()
-    entry.view = line
+    entry.view = StatusLine(text: text)
     entry.isEnabled = false
-    return (entry, line)
+    return entry
 }
 
 private final class MenuBar: NSObject {
     private let item = NSStatusBar.system.statusItem(
         withLength: NSStatusItem.variableLength)
 
-    private let (connection, headline) = statusItem()
-
-    // One per connected controller, directly below `connection`, and the
-    // lines they show.
-    private var controllers: [NSMenuItem] = []
+    // The status lines at the top of the menu, and what they show.
+    private var lines: [NSMenuItem] = []
     private var shownLines: [String] = []
 
     /*
@@ -140,7 +133,7 @@ private final class MenuBar: NSObject {
 
         let menu = NSMenu()
 
-        menu.addItem(connection)
+        // The status lines go in above this separator, in refresh().
         menu.addItem(.separator())
 
         let pair = NSMenuItem(title: "Pair a Controller",
@@ -193,12 +186,7 @@ private final class MenuBar: NSObject {
     }
 
     private func refresh() {
-        let text = connectionText()
-
-        headline.text = text
-        connection.isHidden = text.isEmpty
-
-        showControllers(controllerLines())
+        showLines(statusLines())
 
         // A filled icon while a controller is attached, an outline otherwise,
         // so the state is readable without opening the menu at all.
@@ -219,26 +207,18 @@ private final class MenuBar: NSObject {
     }
 
     // Rebuilt only when something changed, so an open menu does not flicker.
-    private func showControllers(_ lines: [String]) {
-        guard lines != shownLines, let menu = item.menu else {
+    private func showLines(_ texts: [String]) {
+        guard texts != shownLines, let menu = item.menu else {
             return
         }
 
-        shownLines = lines
+        shownLines = texts
 
-        controllers.forEach(menu.removeItem)
+        lines.forEach(menu.removeItem)
+        lines = texts.map(statusItem)
 
-        controllers = lines.map { line in
-            let (entry, view) = statusItem()
-            view.text = line
-            return entry
-        }
-
-        var position = menu.index(of: connection) + 1
-
-        for entry in controllers {
+        for (position, entry) in lines.enumerated() {
             menu.insertItem(entry, at: position)
-            position += 1
         }
     }
 

@@ -37,12 +37,14 @@
 #include "permissions.h"
 #include "dongle/usb.h"
 #include "dongle/dongle.h"
+#include "x360/receiver.h"
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <thread>
 #include <unistd.h>
 #include <sys/types.h>
@@ -258,43 +260,23 @@ namespace
 
 namespace
 {
-    // The dongle half of the program: everything from finding the adapter to
-    // the signal loop that shuts it down again. Factored out of main() so the
-    // menu bar build can run it on a worker thread and leave the main thread
-    // to AppKit, which insists on having it.
-    int runDriver(const sigset_t &mask)
+    /*
+     * Finds and opens the Xbox Wireless Adapter, and keeps trying for as long
+     * as it is not there. Returns nullptr when `manager` is stopped first.
+     *
+     * Opening can legitimately fail on a first try: a reset makes macOS
+     * re-enumerate the adapter, so the device just found is briefly gone.
+     * Retried instead of letting the exception escape - an uncaught throw
+     * aborts the process and buries a transient hiccup under a crash report.
+     */
+    std::unique_ptr<UsbDevice> openAdapter(UsbDeviceManager &manager,
+                                           UsbDevice::Terminate terminate)
     {
-        UsbDeviceManager manager;
-
-        // A failing USB transfer asks us to terminate: deliver a process-wide
-        // SIGTERM that the sigwait() loop below will pick up.
-        UsbDevice::Terminate terminate = []() {
-            kill(getpid(), SIGTERM);
-        };
-
-        // While waiting for the dongle to be plugged in, allow Ctrl-C to quit
-        // (default disposition terminates the process).
-        if (pthread_sigmask(SIG_UNBLOCK, &mask, nullptr) != 0)
-        {
-            Log::error("Error unblocking signals: %s", strerror(errno));
-
-            return EXIT_FAILURE;
-        }
-
-        /*
-         * Opening the dongle can legitimately fail on a first try: a reset makes
-         * macOS re-enumerate it, so the device we just found is briefly gone.
-         * Retry instead of letting the exception escape main() — an uncaught
-         * throw aborts the process and buries a transient hiccup under a crash
-         * report.
-         */
-        std::unique_ptr<UsbDevice> device;
-
-        for (int attempt = 1; !device; attempt++)
+        for (int attempt = 1;; attempt++)
         {
             try
             {
-                device = manager.getDevice({
+                return manager.getDevice({
                     { DONGLE_VID, DONGLE_PID_OLD },
                     { DONGLE_VID, DONGLE_PID_NEW },
                     { DONGLE_VID, DONGLE_PID_SURFACE }
@@ -309,7 +291,9 @@ namespace
                     Log::error("Unplug the adapter, plug it back in, and make "
                                "sure no second instance is running.");
 
-                    return EXIT_FAILURE;
+                    Status::setMessage("Could not open the Xbox Wireless Adapter");
+
+                    return nullptr;
                 }
 
                 Log::info("%s - retrying (%d/5)", error.what(), attempt);
@@ -317,20 +301,57 @@ namespace
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
         }
+    }
 
-        // Re-block before starting the dongle's worker threads.
-        if (pthread_sigmask(SIG_BLOCK, &mask, nullptr) != 0)
-        {
-            Log::error("Error blocking signals: %s", strerror(errno));
+    /*
+     * The driver half of the program. Factored out of main() so the menu bar
+     * build can run it on a worker thread and leave the main thread to
+     * AppKit, which insists on having it.
+     *
+     * Two receivers, both optional: the Xbox 360 receiver runs on a thread of
+     * its own from the start; the Xbox Wireless Adapter is waited for on
+     * another. This thread only takes signals, all the time - so quitting
+     * always shuts both down properly, and "Pair a Controller" never meets a
+     * default signal disposition (which for SIGUSR1 is to terminate).
+     */
+    int runDriver(const sigset_t &mask)
+    {
+        // Signals are blocked here, so its thread inherits the block.
+        X360Receiver receiver;
 
-            return EXIT_FAILURE;
-        }
+        UsbDeviceManager manager;
 
-        Dongle dongle(std::move(device));
+        // A failing USB transfer asks us to terminate: deliver a process-wide
+        // SIGTERM that the sigwait() loop below will pick up.
+        UsbDevice::Terminate terminate = []() {
+            kill(getpid(), SIGTERM);
+        };
 
-        Status::setMessage("");
+        std::mutex dongleMutex;
+        std::unique_ptr<Dongle> dongle;
+        std::atomic<bool> quitting(false);
 
-        Log::info("Ready. Press the dongle button (or send SIGUSR1) to pair.");
+        std::thread adapter([&]() {
+            std::unique_ptr<UsbDevice> device = openAdapter(manager, terminate);
+
+            if (!device)
+            {
+                return;
+            }
+
+            std::lock_guard<std::mutex> lock(dongleMutex);
+
+            if (quitting)
+            {
+                return;
+            }
+
+            dongle.reset(new Dongle(std::move(device)));
+
+            Status::setMessage("");
+
+            Log::info("Ready. Press the dongle button (or send SIGUSR1) to pair.");
+        });
 
         while (true)
         {
@@ -345,10 +366,22 @@ namespace
 
             if (signal == SIGUSR1)
             {
-                Log::debug("User signal received, enabling pairing");
+                std::lock_guard<std::mutex> lock(dongleMutex);
 
-                // Hand the work to the USB thread; libusb must stay single-threaded.
-                dongle.enablePairing();
+                if (dongle)
+                {
+                    Log::debug("User signal received, enabling pairing");
+
+                    // Hand the work to the USB thread; libusb must stay
+                    // single-threaded.
+                    dongle->enablePairing();
+                }
+
+                else
+                {
+                    // Xbox 360 controllers pair on the receiver's own button.
+                    Log::info("No Xbox Wireless Adapter to pair with");
+                }
 
                 continue;
             }
@@ -359,6 +392,18 @@ namespace
 
         Log::info("Shutting down...");
 
+        quitting = true;
+        manager.stop();
+        adapter.join();
+
+        {
+            std::lock_guard<std::mutex> lock(dongleMutex);
+
+            // Powers the adapter's controllers off on the way.
+            dongle.reset();
+        }
+
+        // `receiver` goes last, and powers its controllers off too.
         return EXIT_SUCCESS;
     }
 }

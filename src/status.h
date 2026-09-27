@@ -18,14 +18,21 @@
 
 namespace Status
 {
-    // A line about the app as a whole: "Waiting for adapter", a refusal.
+    // A line about the app as a whole: "Needs permissions", a refusal.
     // Empty once there is nothing to say beyond the controllers themselves.
     void setMessage(const std::string &text);
 
-    // Controllers go by the number the adapter gave them, from 1. It stays
-    // the same while a controller is connected, so the menu does not
-    // renumber the others when one of them leaves.
-    void controllerConnected(int number);
-    void controllerDisconnected(int number);
-    void setBattery(int number, const std::string &level);
+    // A line from one source that is not a controller - the Xbox 360
+    // receiver being held by another app, say. Empty text removes it.
+    void setNotice(const std::string &source, const std::string &text);
+
+    /*
+     * Controllers by a key that stays the same while they are connected, so
+     * the menu does not renumber the others when one leaves: the adapter's
+     * number (1-16) for Xbox One pads, 100 + slot for Xbox 360 pads. The menu
+     * lists them in key order, under their label.
+     */
+    void controllerConnected(int key, const std::string &label);
+    void controllerDisconnected(int key);
+    void setBattery(int key, const std::string &level);
 }

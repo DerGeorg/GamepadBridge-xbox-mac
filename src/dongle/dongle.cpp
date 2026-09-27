@@ -178,7 +178,7 @@ void Dongle::handleControllerConnect(Bytes address)
 
     Log::info("Controller '%d' connected", wcid);
 
-    Status::controllerConnected(wcid);
+    Status::controllerConnected(wcid, "Controller " + std::to_string(wcid));
 }
 
 void Dongle::handleControllerDisconnect(uint8_t wcid)
