@@ -37,15 +37,73 @@ private func controllerLines() -> [String] {
     }
 }
 
+/*
+ * A status line as a view of its own rather than an item title. An open menu
+ * lays out its titles once, when it opens, and cuts off whatever grows or
+ * arrives afterwards — a controller connecting while the menu was open came
+ * out as "Controller…: medium", however wide the menu was. A view keeps the
+ * width it is given.
+ */
+private final class StatusLine: NSView {
+    // Measured from a standard menu with NSMenu.size: rows are 24 points
+    // high, and a title sits 16 points in from either edge.
+    static let height: CGFloat = 24
+    static let inset: CGFloat = 16
+
+    // Wide enough for the longest a controller line can become.
+    static let width = ceil(("Controller 16 \u{00b7} Battery: medium" as NSString)
+        .size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width)
+        + 2 * inset
+
+    private let label = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0,
+                                 width: StatusLine.width,
+                                 height: StatusLine.height))
+        autoresizingMask = [.width]
+
+        label.font = NSFont.menuFont(ofSize: 0)
+        label.textColor = .disabledControlTextColor
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor,
+                                           constant: StatusLine.inset),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor,
+                                            constant: -StatusLine.inset),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not used from a nib")
+    }
+
+    var text: String {
+        get { label.stringValue }
+        set { label.stringValue = newValue }
+    }
+}
+
+private func statusItem() -> (NSMenuItem, StatusLine) {
+    let line = StatusLine()
+    let entry = NSMenuItem()
+    entry.view = line
+    entry.isEnabled = false
+    return (entry, line)
+}
+
 private final class MenuBar: NSObject {
     private let item = NSStatusBar.system.statusItem(
         withLength: NSStatusItem.variableLength)
 
-    private let connection = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let (connection, headline) = statusItem()
 
     // One per connected controller, directly below `connection`, and the
-    // lines they show - their titles carry padding, so they cannot be
-    // compared with the next lines directly.
+    // lines they show.
     private var controllers: [NSMenuItem] = []
     private var shownLines: [String] = []
 
@@ -81,8 +139,6 @@ private final class MenuBar: NSObject {
         super.init()
 
         let menu = NSMenu()
-
-        connection.isEnabled = false
 
         menu.addItem(connection)
         menu.addItem(.separator())
@@ -136,36 +192,11 @@ private final class MenuBar: NSObject {
         timer = ticker
     }
 
-    /*
-     * An open menu lays out its text column once, from the widest title it
-     * has when it opens, and cuts off anything that grows past that later —
-     * a controller connecting while the menu is open, and then reporting its
-     * battery, came out as "Controller…ry: medium". A wider menu does not
-     * help; the column stays. So the lines that change are padded with figure
-     * spaces, which nobody sees, to the longest a controller line can become.
-     */
-    private static let longestLine = "Controller 16 \u{00b7} Battery: medium"
-
-    private static func width(_ text: String) -> CGFloat {
-        (text as NSString).size(
-            withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
-    }
-
-    private static func padded(_ text: String) -> String {
-        let space = "\u{2007}"
-        let missing = width(longestLine) - width(text)
-
-        guard missing > 0, !text.isEmpty else { return text }
-
-        return text + String(repeating: space,
-                             count: Int(ceil(missing / width(space))))
-    }
-
     private func refresh() {
-        let headline = connectionText()
+        let text = connectionText()
 
-        connection.title = MenuBar.padded(headline)
-        connection.isHidden = headline.isEmpty
+        headline.text = text
+        connection.isHidden = text.isEmpty
 
         showControllers(controllerLines())
 
@@ -198,9 +229,8 @@ private final class MenuBar: NSObject {
         controllers.forEach(menu.removeItem)
 
         controllers = lines.map { line in
-            let entry = NSMenuItem(title: MenuBar.padded(line), action: nil,
-                                   keyEquivalent: "")
-            entry.isEnabled = false
+            let (entry, view) = statusItem()
+            view.text = line
             return entry
         }
 
