@@ -115,6 +115,7 @@ private final class MenuBar: NSObject {
         menu.addItem(quit)
 
         menu.delegate = self
+        menu.minimumWidth = MenuBar.widthFor(MenuBar.longestLines)
         item.menu = menu
 
         refresh()
@@ -133,13 +134,43 @@ private final class MenuBar: NSObject {
         timer = ticker
     }
 
+    /*
+     * An open menu takes its width once, when it opens: a line that grows
+     * afterwards is cut off with an ellipsis, not given room. So it opens
+     * wide enough for the longest line it can come to show — a controller
+     * connecting and reporting its battery while it is open included.
+     */
+    private static let longestLines = [
+        "Controller 16 \u{00b7} Battery: medium",
+        "Virtual gamepad refused - permissions missing",
+    ]
+
+    private static func widthFor(_ lines: [String]) -> CGFloat {
+        let font = NSFont.menuFont(ofSize: 0)
+
+        let widest = lines.map {
+            ($0 as NSString).size(withAttributes: [.font: font]).width
+        }.max() ?? 0
+
+        // Room for the check mark column on the left and the margin on the
+        // right, which the title's own width does not include.
+        return ceil(widest) + 48
+    }
+
     private func refresh() {
         let headline = connectionText()
+        let lines = controllerLines()
 
         connection.title = headline
         connection.isHidden = headline.isEmpty
 
-        showControllers(controllerLines())
+        showControllers(lines)
+
+        // A line nobody thought of: at least the next opening fits it.
+        if let menu = item.menu {
+            menu.minimumWidth = max(menu.minimumWidth,
+                                    MenuBar.widthFor(lines + [headline]))
+        }
 
         // A filled icon while a controller is attached, an outline otherwise,
         // so the state is readable without opening the menu at all.
