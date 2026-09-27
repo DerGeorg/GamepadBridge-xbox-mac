@@ -69,7 +69,7 @@ it is 50 lines.
 | 🎮 **A real controller** | Face buttons, bumpers, both analog triggers, both sticks, the d-pad, both stick clicks and the Xbox button — recognised as an Xbox pad, not a generic joystick |
 | 👥 **Several at once** | Every controller is its own pad — Xbox One on the adapter, up to four Xbox 360 on the receiver, all together — and macOS remembers each one across restarts |
 | 📳 **Rumble** | Vibration reaches the controller — from macOS itself and from games under CrossOver |
-| 🖥️ **Lives in the menu bar** | Each controller with its battery level, pairing, quit. No window, no Dock icon |
+| 🖥️ **Lives in the menu bar** | Each controller with its battery level, pairing, quit. Opens at login — switch that off in the same menu. No window, no Dock icon |
 | 🔄 **Updates itself** | Signed updates through Sparkle, or `brew upgrade` if you installed that way |
 | 🔒 **Signed and notarized** | Opens without a Gatekeeper detour. No `xattr` incantations |
 | 📦 **Self-contained** | No Homebrew, no dependencies. Fetches the adapter's firmware the first time an adapter is plugged in; the Xbox 360 receiver needs none |

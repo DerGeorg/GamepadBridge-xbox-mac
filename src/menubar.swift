@@ -14,6 +14,7 @@
 //
 
 import AppKit
+import ServiceManagement
 
 #if GAMEPADBRIDGE_SPARKLE
 import Sparkle
@@ -143,6 +144,15 @@ private final class MenuBar: NSObject {
 
     // Which version is running is the first thing anyone is asked in a bug
     // report, and the app has no window to put it in.
+    /*
+     * On by default, so the app is there before anything else can take the
+     * Xbox 360 receiver - whoever gets to it first keeps it, and Steam takes
+     * it when it can. Switched off here, it stays off.
+     */
+    private let openAtLogin = NSMenuItem(title: "Open at Login",
+                                         action: #selector(toggleOpenAtLogin),
+                                         keyEquivalent: "")
+
     private let version = NSMenuItem(
         title: "GamepadBridge \(currentVersion())",
         action: nil,
@@ -184,6 +194,9 @@ private final class MenuBar: NSObject {
 
         menu.addItem(updates)
 
+        openAtLogin.target = self
+        menu.addItem(openAtLogin)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit GamepadBridge",
@@ -194,6 +207,9 @@ private final class MenuBar: NSObject {
 
         menu.delegate = self
         item.menu = menu
+
+        setUpOpenAtLoginOnce()
+        updateOpenAtLogin()
 
         refresh()
 
@@ -289,6 +305,63 @@ private final class MenuBar: NSObject {
 
         NSApplication.shared.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+
+    // MARK: - Open at Login
+
+    private static let openAtLoginSetUpKey = "OpenAtLoginSetUp"
+
+    /*
+     * The default, applied once per Mac: the first time an installed copy
+     * runs, it adds itself to the login items. Only from /Applications -
+     * a development build would register the build folder, and since both
+     * share a bundle identifier, the installed app would then never do it.
+     */
+    private func setUpOpenAtLoginOnce() {
+        let defaults = UserDefaults.standard
+
+        guard !defaults.bool(forKey: MenuBar.openAtLoginSetUpKey),
+              Bundle.main.bundlePath.hasPrefix("/Applications/") else {
+            return
+        }
+
+        // Once, whether it works or not: asking again at every launch
+        // would overrule someone who said no in System Settings.
+        defaults.set(true, forKey: MenuBar.openAtLoginSetUpKey)
+
+        try? SMAppService.mainApp.register()
+    }
+
+    private func updateOpenAtLogin() {
+        openAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    }
+
+    @objc private func toggleOpenAtLogin() {
+        let service = SMAppService.mainApp
+
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            // Switched off in System Settings > General > Login Items: only
+            // the user can switch it back on there, so take them there.
+            if service.status == .requiresApproval {
+                SMAppService.openSystemSettingsLoginItems()
+            } else {
+                let alert = NSAlert()
+                alert.messageText = "Could not change Open at Login"
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: "OK")
+
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+
+        updateOpenAtLogin()
     }
 
     @objc private func startPairing() {
@@ -396,6 +469,10 @@ extension MenuBar: NSMenuItemValidation {
 // Up to date the moment it opens, rather than up to a second behind.
 extension MenuBar: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        // Checked when shown rather than every second: it can also change
+        // in System Settings.
+        updateOpenAtLogin()
+
         refresh()
     }
 }
