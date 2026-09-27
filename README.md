@@ -4,8 +4,8 @@
 
 # GamepadBridge
 
-**Use your Xbox wireless controller on a Mac.**<br>
-The one macOS refuses to talk to.
+**Use your Xbox One and Xbox 360 wireless controllers on a Mac.**<br>
+The ones macOS refuses to talk to.
 
 [![Website](https://img.shields.io/badge/gamepadbridge.dergeorg.at-3DBF6E?style=for-the-badge)](https://gamepadbridge.dergeorg.at)
 &nbsp;
@@ -145,9 +145,11 @@ they publish. [PORTING.md](docs/PORTING.md) has the details.
   on Bluetooth for a wired one, which speaks a different protocol. Games that
   use macOS's own controller support are not affected, and neither is
   anything under CrossOver, Steam included.
-- **Steam for Mac takes the Xbox 360 receiver for itself** when it is
-  running as the receiver is plugged in. The menu then says so, and
-  GamepadBridge takes the receiver over as soon as Steam lets go of it.
+- **Steam for Mac takes the Xbox 360 receiver for itself** when it gets
+  there first — it has a driver of its own. GamepadBridge opens at login by
+  default, so usually it is the one that gets there first. When Steam does,
+  the menu says so, the controllers work only inside Steam, and GamepadBridge
+  takes the receiver over as soon as Steam is quit.
 - **Behind one USB dock, the Xbox 360 receiver passed input but no
   commands** — no ring light, no rumble. Plugged into the Mac directly, it
   works. If your ring keeps spinning, try a port on the Mac itself.
