@@ -64,7 +64,7 @@ it is 50 lines.
 |---|---|
 | 🎮 **A real controller** | Face buttons, bumpers, both analog triggers, both sticks, the d-pad, both stick clicks and the Xbox button — recognised as an Xbox pad, not a generic joystick |
 | 👥 **Several at once** | Every controller on the adapter is its own pad, and macOS remembers each one across restarts |
-| 📳 **Rumble** | Vibration from games reaches the controller — through macOS, Steam and CrossOver alike |
+| 📳 **Rumble** | Vibration requests reach the controller — tried from macOS's own controller settings |
 | 🖥️ **Lives in the menu bar** | Each controller with its battery level, pairing, quit. No window, no Dock icon |
 | 🔄 **Updates itself** | Signed updates through Sparkle, or `brew upgrade` if you installed that way |
 | 🔒 **Signed and notarized** | Opens without a Gatekeeper detour. No `xattr` incantations |
