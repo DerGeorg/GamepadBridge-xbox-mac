@@ -376,6 +376,8 @@ bool X360Receiver::open()
     reportBusy("");
     lost = false;
 
+    Status::setReceiverPresent(true);
+
     for (std::unique_ptr<Slot> &slot : slots)
     {
         slot->read = libusb_alloc_transfer(0);
@@ -464,6 +466,8 @@ void X360Receiver::close(bool powerOff)
     libusb_close(handle);
     handle = nullptr;
     lost = false;
+
+    Status::setReceiverPresent(false);
 }
 
 void X360Receiver::reportBusy(const std::string &owner)

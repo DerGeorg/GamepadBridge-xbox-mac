@@ -23,6 +23,10 @@ void gpb_status_line(int index, char *buffer, long capacity);
 
 int  gpb_status_controller_present(void);
 
+// 1 while the Xbox Wireless Adapter / the Xbox 360 receiver is in use.
+int  gpb_status_adapter_present(void);
+int  gpb_status_receiver_present(void);
+
 /*
  * Both are expressed as signals, so the menu drives exactly the same paths as
  * Ctrl-C and `kill -USR1`. There is no second shutdown route to keep correct.

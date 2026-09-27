@@ -28,6 +28,9 @@ namespace
 
     std::map<int, Controller> controllers;
 
+    bool adapterPresent = false;
+    bool receiverPresent = false;
+
     void copyOut(const std::string &value, char *buffer, long capacity)
     {
         if (!buffer || capacity <= 0)
@@ -127,6 +130,34 @@ void Status::setBattery(int key, const std::string &level)
     {
         controller->second.battery = level;
     }
+}
+
+void Status::setAdapterPresent(bool present)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    adapterPresent = present;
+}
+
+void Status::setReceiverPresent(bool present)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    receiverPresent = present;
+}
+
+int gpb_status_adapter_present(void)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    return adapterPresent ? 1 : 0;
+}
+
+int gpb_status_receiver_present(void)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    return receiverPresent ? 1 : 0;
 }
 
 int gpb_status_line_count(void)

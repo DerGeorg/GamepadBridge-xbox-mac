@@ -96,6 +96,20 @@ private final class MenuBar: NSObject {
     private let item = NSStatusBar.system.statusItem(
         withLength: NSStatusItem.variableLength)
 
+    /*
+     * Pairing is two different things. The adapter is put into pairing mode
+     * from here; the Xbox 360 receiver only by its own button - there is no
+     * known command for it - so its entry explains the two buttons instead.
+     * Which of them show, and what they are called, follows what is plugged
+     * in (see updatePairing).
+     */
+    private let pairAdapter = NSMenuItem(title: "Pair a Controller",
+                                         action: #selector(startPairing),
+                                         keyEquivalent: "")
+    private let pairReceiver = NSMenuItem(title: "Pair a Controller…",
+                                          action: #selector(explainReceiverPairing),
+                                          keyEquivalent: "")
+
     // The status lines at the top of the menu, and what they show.
     private var lines: [NSMenuItem] = []
     private var shownLines: [String] = []
@@ -136,11 +150,10 @@ private final class MenuBar: NSObject {
         // The status lines go in above this separator, in refresh().
         menu.addItem(.separator())
 
-        let pair = NSMenuItem(title: "Pair a Controller",
-                              action: #selector(startPairing),
-                              keyEquivalent: "")
-        pair.target = self
-        menu.addItem(pair)
+        pairAdapter.target = self
+        pairReceiver.target = self
+        menu.addItem(pairAdapter)
+        menu.addItem(pairReceiver)
 
         menu.addItem(.separator())
 
@@ -187,6 +200,7 @@ private final class MenuBar: NSObject {
 
     private func refresh() {
         showLines(statusLines())
+        updatePairing()
 
         // A filled icon while a controller is attached, an outline otherwise,
         // so the state is readable without opening the menu at all.
@@ -222,8 +236,37 @@ private final class MenuBar: NSObject {
         }
     }
 
+    private func updatePairing() {
+        let adapter = gpb_status_adapter_present() != 0
+        let receiver = gpb_status_receiver_present() != 0
+
+        // With neither plugged in, one greyed-out entry says pairing exists.
+        pairAdapter.isHidden = receiver && !adapter
+        pairAdapter.title = receiver ? "Pair an Xbox One Controller" : "Pair a Controller"
+
+        pairReceiver.isHidden = !receiver
+        pairReceiver.title = adapter ? "Pair an Xbox 360 Controller…" : "Pair a Controller…"
+    }
+
     @objc private func startPairing() {
         gpb_request_pairing()
+    }
+
+    @objc private func explainReceiverPairing() {
+        let alert = NSAlert()
+        alert.messageText = "Pairing an Xbox 360 controller"
+        alert.informativeText = "The Xbox 360 receiver pairs with its own "
+            + "button, not from the Mac.\n\n"
+            + "1. Press the button on the receiver. Its light starts blinking.\n"
+            + "2. Within 20 seconds, press the small round connect button on "
+            + "the top edge of the controller, between the bumpers.\n\n"
+            + "The ring spins faster, then lights one quarter: that is the "
+            + "controller's slot. A controller paired once connects by "
+            + "itself from then on."
+        alert.addButton(withTitle: "OK")
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     @objc private func quit() {
@@ -293,6 +336,18 @@ private final class MenuBar: NSObject {
         }
     }
 #endif
+}
+
+// The menu enables every item with a target by itself; pairing the adapter
+// needs one plugged in.
+extension MenuBar: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem === pairAdapter {
+            return gpb_status_adapter_present() != 0
+        }
+
+        return true
+    }
 }
 
 // Up to date the moment it opens, rather than up to a second behind.

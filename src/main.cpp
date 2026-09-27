@@ -349,6 +349,7 @@ namespace
             dongle.reset(new Dongle(std::move(device)));
 
             Status::setMessage("");
+            Status::setAdapterPresent(true);
 
             Log::info("Ready. Press the dongle button (or send SIGUSR1) to pair.");
         });

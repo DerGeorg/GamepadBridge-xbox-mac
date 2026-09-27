@@ -35,4 +35,9 @@ namespace Status
     void controllerConnected(int key, const std::string &label);
     void controllerDisconnected(int key);
     void setBattery(int key, const std::string &level);
+
+    // Which receivers are there, for the menu's pairing entries: the
+    // adapter pairs from the menu, the Xbox 360 receiver only by its button.
+    void setAdapterPresent(bool present);
+    void setReceiverPresent(bool present);
 }
