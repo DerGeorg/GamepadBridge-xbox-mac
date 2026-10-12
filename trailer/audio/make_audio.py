@@ -252,12 +252,15 @@ def whoosh(cut):
     place(cut - 0.35, shaped(noise(0.6, 600, 5000), lambda p: math.sin(math.pi * p) ** 2), 0.28, 0.0)
 
 
-def click(time, gain=0.35):
-    place(time, shaped(noise(0.012, highpass=True, cutoff_from=3000, cutoff_to=3000), lambda p: 1 - p), gain)
-    place(time, tone(2400, 0.02, SINE, decay=0.005), gain * 0.4)
+def tock(time, gain=0.35, pitch=1150):
+    """A soft, woody click - a short sine with a breath of low noise,
+    instead of a bright tick."""
+    place(time, tone(pitch, 0.06, SINE, attack=0.001, decay=0.012), gain)
+    place(time, shaped(noise(0.02, 2500, 1500), lambda p: (1 - p) ** 2), gain * 0.25)
 
 
 def thud(time, gain=0.6):
+    """Something set down: a low tone that drops in pitch."""
     out = []
     phase = 0.0
     for i in range(int(0.25 * RATE)):
@@ -267,10 +270,86 @@ def thud(time, gain=0.6):
     place(time, out, gain)
 
 
-def chime(time, notes, gain=0.16):
+def marimba(time, midi, gain=0.3, pan=0.0, length=1.4):
+    """A struck bar: a round fundamental, plus the bright overtones of the
+    strike (about 3.9 and 9.2 times the pitch) that die away within
+    milliseconds. Warm, never shrill."""
+    f = hz(midi)
+    n = int(length * RATE)
+    out = [0.0] * n
+    for i in range(n):
+        tt = i / RATE
+        env = min(1.0, tt / 0.002)
+        out[i] = env * (
+            math.sin(2 * math.pi * f * tt) * math.exp(-tt / 0.45)
+            + 0.22 * math.sin(2 * math.pi * f * 3.93 * tt) * math.exp(-tt / 0.045)
+            + 0.07 * math.sin(2 * math.pi * f * 9.2 * tt) * math.exp(-tt / 0.012)
+        )
+    place(time, out, gain, pan)
+
+
+def bell(time, midi, gain=0.12, pan=0.0, length=2.2):
+    """A glassy bell by FM synthesis: the overtones fade faster than the
+    tone, so it starts bright and settles soft."""
+    f = hz(midi)
+    n = int(length * RATE)
+    out = [0.0] * n
+    for i in range(n):
+        tt = i / RATE
+        index = 2.2 * math.exp(-tt / 0.25)
+        mod = index * math.sin(2 * math.pi * f * 3.5 * tt)
+        out[i] = math.sin(2 * math.pi * f * tt + mod) * math.exp(-tt / 0.7) * min(1.0, tt / 0.003)
+    place(time, out, gain, pan)
+
+
+def chime(time, notes, gain=0.3):
+    """Something worked: a rising marimba arpeggio with a soft bell above."""
     for k, note in enumerate(notes):
-        place(time + k * 0.07, tone(hz(note), 1.2, SOFT, attack=0.003, decay=0.35), gain, -0.3 + k * 0.3)
-        place(time + k * 0.07, tone(hz(note + 12), 0.8, SINE, attack=0.003, decay=0.2), gain * 0.35, -0.3 + k * 0.3)
+        pan = -0.35 + 0.7 * k / max(1, len(notes) - 1)
+        marimba(time + k * 0.085, note, gain, pan)
+    bell(time + 0.085 * (len(notes) - 1), notes[-1] + 12, gain * 0.35, 0.2)
+
+
+def reverb(left_in, right_in, wet=0.22):
+    """A small room: four damped comb filters and two all-passes per
+    channel (Schroeder). Softens the effects so they sit in the music
+    instead of on top of it."""
+    def channel(samples, offset):
+        n = len(samples)
+        out = [0.0] * n
+        for delay_ms in (29.7, 37.1, 41.1, 43.7):
+            d = int((delay_ms + offset) * RATE / 1000)
+            buf = [0.0] * d
+            low = 0.0
+            k = 0
+            for i in range(n):
+                y = buf[k]
+                low += 0.35 * (y - low)  # damping: the tail gets darker
+                buf[k] = samples[i] + low * 0.74
+                out[i] += y
+                k += 1
+                if k == d:
+                    k = 0
+        for delay_ms, g in ((5.0, 0.7), (1.7, 0.7)):
+            d = int(delay_ms * RATE / 1000)
+            buf = [0.0] * d
+            k = 0
+            for i in range(n):
+                b = buf[k]
+                x = out[i]
+                y = -g * x + b
+                buf[k] = x + g * y
+                out[i] = y
+                k += 1
+                if k == d:
+                    k = 0
+        return out
+
+    wl = channel(left_in, 0.0)
+    wr = channel(right_in, 1.3)  # a slightly different room each side: width
+    for i in range(len(left_in)):
+        left_in[i] += wl[i] * wet * 0.25
+        right_in[i] += wr[i] * wet * 0.25
 
 
 def rumble(start, end, gain=0.4):
@@ -291,30 +370,34 @@ def rumble(start, end, gain=0.4):
 for scene in TIMELINE["scenes"][1:]:
     whoosh(starts[scene["id"]])
 
-thud(at("Problem", "plug"), 0.8)
-click(at("Problem", "plug"), 0.6)
+thud(at("Problem", "plug"), 0.7)
+tock(at("Problem", "plug"), 0.45, 900)
 
-click(at("Install", "grab"), 0.45)
-thud(at("Install", "drop"), 0.9)
+tock(at("Install", "grab"), 0.35)
+thud(at("Install", "drop"), 0.6)
+marimba(at("Install", "drop"), 57, 0.32)  # A3, landing in the folder
 duck(at("Install", "drop") - 0.05, at("Install", "drop") + 0.3, 0.5)
-for cue in ("permission1", "permission2"):
-    click(at("Install", cue), 0.5)
-    place(at("Install", cue) + 0.02, tone(1320, 0.3, SOFT, decay=0.09), 0.3)
-    duck(at("Install", cue) - 0.03, at("Install", cue) + 0.3, 0.45)
+for cue, note in (("permission1", 76), ("permission2", 81)):  # E5, then A5
+    tock(at("Install", cue), 0.3)
+    marimba(at("Install", cue) + 0.02, note, 0.38, 0.2)
+    duck(at("Install", cue) - 0.03, at("Install", cue) + 0.4, 0.45)
 
-click(at("Pair", "iconIn"), 0.35)
-click(at("Pair", "menuOpen"), 0.55)
-click(at("Pair", "pairClick"), 0.55)
-chime(at("Pair", "connected"), [72, 76, 79, 84], 0.38)
-duck(at("Pair", "connected") - 0.05, at("Pair", "connected") + 1.1, 0.6)
+tock(at("Pair", "iconIn"), 0.25)
+tock(at("Pair", "menuOpen"), 0.4)
+tock(at("Pair", "pairClick"), 0.4)
+chime(at("Pair", "connected"), [72, 76, 79, 84], 0.42)  # C5 E5 G5 C6
+duck(at("Pair", "connected") - 0.05, at("Pair", "connected") + 1.2, 0.7)
 
-chime(at("Xbox360", "ring"), [67, 72, 76], 0.38)
-duck(at("Xbox360", "ring") - 0.05, at("Xbox360", "ring") + 0.9, 0.6)
-rumble(at("Xbox360", "rumble"), at("Xbox360", "rumbleEnd"), 0.55)
+chime(at("Xbox360", "ring"), [67, 72, 76], 0.42)  # G4 C5 E5
+duck(at("Xbox360", "ring") - 0.05, at("Xbox360", "ring") + 1.0, 0.7)
+rumble(at("Xbox360", "rumble"), at("Xbox360", "rumbleEnd"), 0.5)
 duck(at("Xbox360", "rumble"), at("Xbox360", "rumbleEnd"), 0.5)
 
 for k, cue in enumerate(CUES["Features"]["cards"]):
-    pluck(starts["Features"] + cue, [69, 72, 76, 81][k], 0.32, -0.3 + k * 0.2)
+    marimba(starts["Features"] + cue, [69, 72, 76, 81][k], 0.28, -0.3 + k * 0.2)
+
+# The effects get the room; the music has its own.
+reverb(left, right)
 
 # --- master -------------------------------------------------------------------------
 
