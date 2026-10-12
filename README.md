@@ -41,6 +41,13 @@ time.
 
 <div align="center">
 
+<a href="https://gamepadbridge.dergeorg.at/#trailer"><img src="docs/trailer.jpg" width="640" alt="GamepadBridge trailer: plugged in to playing in 40 seconds"></a><br>
+<sub>▶ The 40-second trailer, with sound — plugged in to playing</sub>
+
+</div>
+
+<div align="center">
+
 <img src="docs/menu.png" width="287" alt="The GamepadBridge menu open in the macOS menu bar: two Xbox One controllers with their battery level and two Xbox 360 controllers, pairing for each receiver, the version, Open at Login and Quit">
 
 </div>
