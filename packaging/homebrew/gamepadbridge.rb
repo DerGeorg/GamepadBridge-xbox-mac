@@ -11,8 +11,8 @@
 # fail silently. Only the signed build works, so the signed build is what
 # gets shipped.
 cask "gamepadbridge" do
-  version "1.2.0"
-  sha256 "5b73f7c16d22b42a11d3cb59d955b08358d6e670d2ec1492a4291f46b843672f"
+  version "1.2.1"
+  sha256 "683dc373ed70efd3ced014b9137adbf7b44e4282773694225ba1a5ba49284a26"
 
   # The package registry, not the /-/releases/.../downloads/ permalink: GitLab
   # treats an absolute asset URL as external and answers that permalink with a
