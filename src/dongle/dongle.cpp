@@ -169,6 +169,8 @@ void Dongle::handleControllerConnect(Bytes address)
         });
     };
 
+    lastPacket[wcid - 1] = std::chrono::steady_clock::now();
+
     controllers[wcid - 1].reset(new Controller(
         wcid,
         formatAddress(address),
@@ -181,7 +183,7 @@ void Dongle::handleControllerConnect(Bytes address)
     Status::controllerConnected(wcid, "Controller " + std::to_string(wcid));
 }
 
-void Dongle::handleControllerDisconnect(uint8_t wcid)
+void Dongle::handleControllerDisconnect(uint8_t wcid, const char *reason)
 {
     // Ignore invalid WCIDs
     if (wcid == 0 || wcid > MT_WCID_COUNT)
@@ -206,7 +208,18 @@ void Dongle::handleControllerDisconnect(uint8_t wcid)
         return;
     }
 
-    Log::info("Controller '%d' disconnected", wcid);
+    const long quiet = static_cast<long>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - lastPacket[wcid - 1]
+        ).count()
+    );
+
+    Log::info(
+        "Controller '%d' disconnected (%s, last packet %lds ago)",
+        wcid,
+        reason,
+        quiet
+    );
 
     Status::controllerDisconnected(wcid);
 }
@@ -272,6 +285,8 @@ void Dongle::handleControllerPacket(uint8_t wcid, const Bytes &packet)
         return;
     }
 
+    lastPacket[wcid - 1] = std::chrono::steady_clock::now();
+
     if (!controllers[wcid - 1]->handlePacket(data))
     {
         Log::error("Error handling packet for controller '%d'", wcid);
@@ -319,7 +334,7 @@ void Dongle::handleWlanPacket(const Bytes &packet)
             // They associate, disassociate and associate again during pairing
             // Disassociations happen without triggering EVT_CLIENT_LOST
             case MT_WLAN_DISASSOCIATION:
-                handleControllerDisconnect(rxWi->wcid);
+                handleControllerDisconnect(rxWi->wcid, "disassociated");
                 break;
 
             // Reserved frames are used for different purposes
@@ -375,7 +390,7 @@ void Dongle::handleBulkData(const Bytes &data)
 
             case EVT_CLIENT_LOST:
                 // Packet is guaranteed not to be empty
-                handleControllerDisconnect(packet[0]);
+                handleControllerDisconnect(packet[0], "lost by the adapter");
                 break;
         }
     }

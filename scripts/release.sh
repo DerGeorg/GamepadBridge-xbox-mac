@@ -177,6 +177,11 @@ PROFILE_NAME="$found"
 [ -d "$SPARKLE/Sparkle.framework" ] \
     || die "Sparkle is missing - run scripts/get-sparkle.sh"
 
+# Homebrew's libusb would lift the app's minimum macOS to whatever it was
+# bottled on and leave out Intel; the release links one built for the app.
+"$ROOT/scripts/build-libusb.sh" | sed 's/^/  /' \
+    || die "could not build libusb - see above"
+
 [ -f "$SPARKLE_KEY_FILE" ] || die "no Sparkle public key at
   $SPARKLE_KEY_FILE
 Run $SPARKLE/bin/generate_keys once. It puts the private key in your
@@ -211,6 +216,7 @@ cmake -G Xcode \
     -DXOW_CODESIGN_IDENTITY="$IDENTITY" \
     -DXOW_PROVISIONING_PROFILE="$PROFILE_NAME" \
     -DXOW_STATIC_LIBUSB=ON \
+    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
     -DXOW_SPARKLE=ON \
     -DXOW_SPARKLE_PUBLIC_KEY="$SPARKLE_PUBLIC_KEY" \
     -S "$ROOT" -B "$BUILD" > /dev/null
@@ -290,7 +296,39 @@ if grep -q "/opt/homebrew" <<< "$libraries"; then
     die "the app still links against Homebrew - it would not run elsewhere"
 fi
 
+# The system refuses to launch a binary on a macOS older than the minimum
+# stamped into it, regardless of LSMinimumSystemVersion. 1.2.0 went out
+# stamped for macOS 27 and so did not start on 15 or 26.
+WANT_MIN="$(sed -n 's/^set(CMAKE_OSX_DEPLOYMENT_TARGET "\([^"]*\)".*/\1/p' \
+    "$ROOT/CMakeLists.txt")"
+PLIST_MIN="$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" \
+    "$APP/Contents/Info.plist")"
+
+[ "$PLIST_MIN" = "$WANT_MIN" ] || die "Info.plist says macOS $PLIST_MIN, \
+CMakeLists.txt says $WANT_MIN"
+
+for binary in "$APP/Contents/MacOS/GamepadBridge" \
+    "$SPARKLE_FW/Versions/Current/Sparkle"
+do
+    archs="$(lipo -archs "$binary")"
+
+    for arch in arm64 x86_64; do
+        grep -qw "$arch" <<< "$archs" \
+            || die "$(basename "$binary") has no $arch slice (has: $archs)"
+
+        min="$(vtool -arch "$arch" -show-build "$binary" \
+            | awk '$1 == "minos" { print $2; exit }')"
+
+        # sort -V puts the larger version last: the binary's minimum must
+        # not be above the app's.
+        [ "$(printf '%s\n%s\n' "$min" "$WANT_MIN" | sort -V | tail -1)" \
+            = "$WANT_MIN" ] || die "$(basename "$binary") ($arch) needs \
+macOS $min, the app promises $WANT_MIN"
+    done
+done
+
 echo "  entitlements, hardened runtime, timestamp and dependencies all check out"
+echo "  runs on macOS $WANT_MIN and newer, Apple silicon and Intel"
 
 # ---------------------------------------------------------------------------
 step "Notarizing the app"

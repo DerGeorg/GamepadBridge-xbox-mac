@@ -106,6 +106,7 @@ protected:
         FW_MAC_ADDRESS_SET = 0,
         FW_CLIENT_ADD = 1,
         FW_CLIENT_REMOVE = 2,
+        FW_IDLE_TIME_SET = 5,
         FW_CHANNEL_CANDIDATES_SET = 7,
     };
 

@@ -1,4 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
+
+# The oldest macOS the app runs on. CoreHID's HIDVirtualDevice arrived in
+# macOS 15. Without this the toolchain stamps the SDK's own version into the
+# binary, and the system then refuses to launch it on anything older, whatever
+# LSMinimumSystemVersion says. Has to be set before project().
+# scripts/build-libusb.sh reads it from here.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
+
 project(gamepadbridge CXX)
 
 set(CMAKE_CXX_STANDARD 11)
@@ -41,7 +49,7 @@ set(XOW_APPCAST_URL
 
 # Marketing version for the bundle. XOW_VERSION is a git describe and is not
 # a valid CFBundleShortVersionString.
-set(XOW_RELEASE_VERSION "1.2.0" CACHE STRING "Release version for the bundle")
+set(XOW_RELEASE_VERSION "1.2.1" CACHE STRING "Release version for the bundle")
 
 # Default firmware location. Override at runtime with the XOW_FIRMWARE env var.
 set(XOW_FIRMWARE_PATH "/usr/local/share/gamepadbridge/xow_dongle.bin"
@@ -66,6 +74,15 @@ endif()
 # Dependencies
 # ---------------------------------------------------------------------------
 find_package(PkgConfig REQUIRED)
+
+# scripts/build-libusb.sh builds libusb for the deployment target above and
+# for both architectures. Homebrew's is built for the macOS it was bottled on
+# and would raise the app's minimum to that, so the local build wins when it
+# is there.
+if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/libusb/lib/pkgconfig/libusb-1.0.pc")
+    list(PREPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/third_party/libusb")
+endif()
+
 pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
 
 find_package(Threads REQUIRED)

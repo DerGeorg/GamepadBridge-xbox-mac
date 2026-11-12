@@ -18,6 +18,15 @@ brew install libusb pkg-config cmake
 A released build has no such dependency — libusb is linked statically, and
 the firmware is extracted with the `bsdtar` that ships with macOS.
 
+Homebrew's libusb is fine for working on the app, but not for a release: its
+archive is built for the macOS it was bottled on and for one architecture.
+`scripts/release.sh` therefore runs `scripts/build-libusb.sh` first, which
+builds the same libusb release for the app's minimum macOS
+(`CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt`, 15.0) and for Apple
+silicon and Intel into `third_party/libusb`. Once that exists, every build
+uses it. The release refuses to continue if any binary in the bundle needs a
+newer macOS than the app promises.
+
 ## Stage 1 — build & run
 
 ```sh

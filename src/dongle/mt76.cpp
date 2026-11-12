@@ -842,6 +842,15 @@ Mt76::Mt76(
         throw Mt76Exception("Failed to set MAC address");
     }
 
+    // Without an idle time the firmware drops a client that has sent nothing
+    // for a while: Xbox Series controllers (model 1914) disconnect after
+    // 10-30 s without input and reconnect a few seconds later. xow never set
+    // it (medusalix/xow#144); xone does, with this value.
+    if (!sendFirmwareCommand(FW_IDLE_TIME_SET, Bytes{64, 0, 0, 0}))
+    {
+        throw Mt76Exception("Failed to set idle time");
+    }
+
     // Reset necessary for reliable WLAN associations
     controlWrite(MT_MAC_SYS_CTRL, 0);
     controlWrite(MT_RF_BYPASS_0, 0);

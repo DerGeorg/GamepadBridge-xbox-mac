@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <array>
+#include <chrono>
 #include <atomic>
 #include <thread>
 #include <mutex>
@@ -61,7 +62,7 @@ private:
 
     /* Packet handling */
     void handleControllerConnect(Bytes address);
-    void handleControllerDisconnect(uint8_t wcid);
+    void handleControllerDisconnect(uint8_t wcid, const char *reason);
     void handleControllerPair(Bytes address, const Bytes &packet);
     void handleControllerPacket(uint8_t wcid, const Bytes &packet);
     void handleWlanPacket(const Bytes &packet);
@@ -84,4 +85,9 @@ private:
 
     std::mutex controllerMutex;
     std::array<std::unique_ptr<Controller>, MT_WCID_COUNT> controllers;
+
+    // When each controller last sent anything, so a disconnect can say how
+    // long it had been quiet. Guarded by controllerMutex.
+    std::array<std::chrono::steady_clock::time_point, MT_WCID_COUNT>
+        lastPacket;
 };
